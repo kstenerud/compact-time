@@ -116,7 +116,7 @@ Examples
 
 ### Example 1:
 
-    17:53:04.180 June 24, 2019
+    June 24, 2019, 17:53:04.180
 
 The sub-second portion of this date goes to the millisecond, which requires a magnitude field of 1. Magnitude 1 implies a base structure of 40 bits, containing 1 bit of year data.
 
@@ -156,7 +156,7 @@ Encoded value:
 
 ### Example 2:
 
-    08:19:20 January 7, 1998
+    January 7, 1998, 08:19:20
 
 There is no sub-second portion to this date, and so we use a magnitude of 0. Magnitude 0 implies a base structure of 32 bits, containing 3 bits of year data.
 

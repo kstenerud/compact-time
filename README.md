@@ -30,7 +30,7 @@ This specification is part of the [Specification Project](https://github.com/kst
 Implementations
 ---------------
 
-* TODO
+* [C implementation](reference-implementation)
 
 
 
