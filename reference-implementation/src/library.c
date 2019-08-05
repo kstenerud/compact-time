@@ -1,34 +1,32 @@
 #include "cdate/cdate.h"
 
+#include <vlq/vlq.h>
+
 // #define KSLogger_LocalLevel TRACE
 #include "kslogger.h"
-
-ANSI_EXTENSION typedef unsigned __int128 uint128_ct;
 
 #define QUOTE(str) #str
 #define EXPAND_AND_QUOTE(str) QUOTE(str)
 
-enum
-{
-    SHIFT_SECOND =  2,
-    SHIFT_MINUTE =  8,
-    SHIFT_HOUR   = 14,
-    SHIFT_DAY    = 19,
-    SHIFT_MONTH  = 24,
-    SHIFT_SUBSEC = 28,
-};
+static const int YEAR_BIAS = 2000;
+static const int BITS_PER_YEAR_GROUP = 7;
 
-static const unsigned MASK_MAGNITUDE = ((1<<2)-1);
-static const unsigned MASK_SECOND    = ((1<<6)-1);
-static const unsigned MASK_MINUTE    = ((1<<6)-1);
-static const unsigned MASK_HOUR      = ((1<<5)-1);
-static const unsigned MASK_DAY       = ((1<<5)-1);
-static const unsigned MASK_MONTH     = ((1<<4)-1);
+#define SIZE_MAGNITUDE 2
+#define SIZE_SUBSECOND 10
+#define SIZE_SECOND    6
+#define SIZE_MINUTE    6
+#define SIZE_HOUR      5
+#define SIZE_DAY       5
+#define SIZE_MONTH     4
 
-static const int g_base_sizes[] = { 4, 5, 7, 8 };
-static const int g_year_bits[] = { 3, 1, 7, 5 };
-static const int g_year_shifts[] = { 28, 38, 48, 58 };
-static const unsigned g_subsec_masks[] = { 0, (1<<10)-1, (1<<20)-1, (1<<30)-1 };
+static const unsigned MASK_SECOND    = ((1<<SIZE_SECOND)-1);
+static const unsigned MASK_MINUTE    = ((1<<SIZE_MINUTE)-1);
+static const unsigned MASK_HOUR      = ((1<<SIZE_HOUR)-1);
+static const unsigned MASK_DAY       = ((1<<SIZE_DAY)-1);
+static const unsigned MASK_MONTH     = ((1<<SIZE_MONTH)-1);
+
+static const int g_base_sizes[] = { 4, 5, 6, 8 };
+static const int g_year_high_bits[] = { 4, 2, 0, 6 };
 static const unsigned g_subsec_multipliers[] = { 1, 1000000, 1000, 1 };
 
 
@@ -61,13 +59,52 @@ static int zigzag_decode(const uint32_t value)
 
 static unsigned encode_year(const int year)
 {
-    return zigzag_encode(year - 2000);
+    return zigzag_encode(year - YEAR_BIAS);
 }
 
 static int decode_year(const unsigned encoded_year)
 {
-    return zigzag_decode(encoded_year) + 2000;
+    return zigzag_decode(encoded_year) + YEAR_BIAS;
 }
+
+static int get_base_byte_count(int magnitude)
+{
+    return (SIZE_MAGNITUDE
+           + SIZE_SUBSECOND * magnitude
+           + SIZE_SECOND
+           + SIZE_MINUTE
+           + SIZE_HOUR
+           + SIZE_DAY
+           + SIZE_MONTH
+           + g_year_high_bits[magnitude])
+           / 8;
+}
+
+static int get_year_group_count(uint32_t encoded_year, int subsecond_magnitude)
+{
+    const int extra_bit_count = g_year_high_bits[subsecond_magnitude];
+    uint32_t year = encoded_year >> BITS_PER_YEAR_GROUP;
+    if(year == 0)
+    {
+        return 1;
+    }
+
+    int size = 1;
+    while(year != 0)
+    {
+        size++;
+        year >>= BITS_PER_YEAR_GROUP;
+    }
+
+    uint32_t extra_mask = (1<<extra_bit_count)-1;
+    uint32_t last_group_bits = encoded_year >> (BITS_PER_YEAR_GROUP * (size-1));
+    if(last_group_bits & ~extra_mask)
+    {
+        return size;
+    }
+    return size - 1;
+}
+
 
 
 // ----------
@@ -82,76 +119,66 @@ const char* cdate_version()
 int cdate_encoded_size(cdate* date)
 {
     const int magnitude = get_subsecond_magnitude(date);
-    int size = g_base_sizes[magnitude];
-    unsigned year = encode_year(date->year) >> g_year_bits[magnitude];
-    KSLOG_DEBUG("Mag %d, size %d, year %d (%d), bits %d. Result year %d",
-        magnitude, size, date->year, encode_year(date->year), g_year_bits[magnitude], year);
-    while(year > 0)
-    {
-        year = year >> 7;
-        size++;
-    }
-    return size;
+    const int base_byte_count = get_base_byte_count(magnitude);
+    const unsigned encoded_year = encode_year(date->year);
+    const int year_group_count = get_year_group_count(encoded_year, magnitude);
+
+    return base_byte_count + year_group_count;
 }
 
 int cdate_encode(const cdate* date, uint8_t* dst, int dst_length)
 {
     KSLOG_DEBUG("encode");
     const int magnitude = get_subsecond_magnitude(date);
-    uint128_ct accumulator = magnitude |
-        ((uint64_t)date->second << SHIFT_SECOND) |
-        ((uint64_t)date->minute << SHIFT_MINUTE) |
-        ((uint64_t)date->hour << SHIFT_HOUR) |
-        ((uint64_t)date->day << SHIFT_DAY) |
-        ((uint64_t)date->month << SHIFT_MONTH) |
-        ((uint64_t)encode_year(date->year) << g_year_shifts[magnitude]);
+    const int base_byte_count = get_base_byte_count(magnitude);
+    unsigned encoded_year = encode_year(date->year);
+    const int year_group_count = get_year_group_count(encoded_year, magnitude);
+    KSLOG_TRACE("m %d, b %d, y %d (%d), g %d", magnitude, base_byte_count, encoded_year, date->year, year_group_count);
 
-    uint64_t subsecond = date->nanosecond / g_subsec_multipliers[magnitude];
-    accumulator |= (subsecond << SHIFT_SUBSEC);
-
-    KSLOG_TRACE("Magnitude:   %016lx", magnitude);
-    KSLOG_TRACE("Seconds:     %016lx", ((uint64_t)date->second << SHIFT_SECOND));
-    KSLOG_TRACE("Minutes:     %016lx", ((uint64_t)date->minute << SHIFT_MINUTE));
-    KSLOG_TRACE("Hours:       %016lx", ((uint64_t)date->hour << SHIFT_HOUR));
-    KSLOG_TRACE("Days:        %016lx", ((uint64_t)date->day << SHIFT_DAY));
-    KSLOG_TRACE("Months:      %016lx", ((uint64_t)date->month << SHIFT_MONTH));
-    KSLOG_TRACE("Subseconds:  %016lx", (subsecond << SHIFT_SUBSEC));
-    KSLOG_TRACE("Years:       %016lx: y %x, s %d", ((uint64_t)encode_year(date->year) << g_year_shifts[magnitude]), encode_year(date->year), g_year_shifts[magnitude]);
-    KSLOG_DEBUG("Accumulator: %016lx", (uint64_t)accumulator);
-
-    // (base size - 1) because the first continuation bit occurs in the last
-    // byte of the base encoded structure.
-    const int base_size = g_base_sizes[magnitude] - 1;
-    if(base_size >= dst_length)
+    if(base_byte_count + year_group_count > dst_length)
     {
         return -1;
     }
+
+    const uint64_t subsecond = date->nanosecond / g_subsec_multipliers[magnitude];
+    const int year_group_bit_count = year_group_count*BITS_PER_YEAR_GROUP;
+    const unsigned year_grouped_mask = (1<<year_group_bit_count) - 1;
+    KSLOG_TRACE("subs %d, year group bits %d, year mask %x", subsecond, year_group_bit_count, year_grouped_mask);
+
+    int b = 0;
+    KSLOG_TRACE("y: %016lx %02d %d", (uint64_t)(encoded_year >> year_group_bit_count) << b, b, encoded_year >> year_group_bit_count); b += g_year_high_bits[magnitude];
+    KSLOG_TRACE("M: %016lx %02d %d", (uint64_t)date->month << b, b, date->month); b += SIZE_MONTH;
+    KSLOG_TRACE("d: %016lx %02d %d", (uint64_t)date->day << b, b, date->day); b += SIZE_DAY;
+    KSLOG_TRACE("h: %016lx %02d %d", (uint64_t)date->hour << b, b, date->hour); b += SIZE_HOUR;
+    KSLOG_TRACE("m: %016lx %02d %d", (uint64_t)date->minute << b, b, date->minute); b += SIZE_MINUTE;
+    KSLOG_TRACE("s: %016lx %02d %d", (uint64_t)date->second << b, b, date->second); b += SIZE_SECOND;
+    KSLOG_TRACE("S: %016lx %02d %d", (uint64_t)subsecond << b, b, subsecond); b += SIZE_SUBSECOND * magnitude;
+    KSLOG_TRACE("a: %016lx %02d %d", (uint64_t)magnitude << b, b, magnitude);
+
+    uint64_t accumulator = magnitude;
+    accumulator = (accumulator << (SIZE_SUBSECOND * magnitude)) + subsecond;
+    accumulator = (accumulator << SIZE_SECOND) + date->second;
+    accumulator = (accumulator << SIZE_MINUTE) + date->minute;
+    accumulator = (accumulator << SIZE_HOUR) + date->hour;
+    accumulator = (accumulator << SIZE_DAY) + date->day;
+    accumulator = (accumulator << SIZE_MONTH) + date->month;
+    accumulator = (accumulator << g_year_high_bits[magnitude]) + (encoded_year >> year_group_bit_count);
+
+    KSLOG_DEBUG("Accumulator: %016lx", (uint64_t)accumulator);
+
+    encoded_year &= year_grouped_mask;
+
     int offset = 0;
-    for(; offset < base_size; offset++)
+    for(int i = base_byte_count-1; i >= 0; i--)
     {
-        dst[offset] = (uint8_t)accumulator;
-        accumulator >>= 8;
+        KSLOG_TRACE("Write %02x", (uint8_t)(accumulator >> (8*i)));
+        dst[offset++] = (uint8_t)(accumulator >> (8*i));
     }
 
-    while(accumulator > 0)
-    {
-        if(offset >= dst_length)
-        {
-            return -1;
-        }
-        uint8_t next_byte = accumulator & 0x7f;
-        accumulator >>= 7;
-        if(accumulator > 0)
-        {
-            next_byte |= 0x80;
-        }
-        dst[offset++] = next_byte;
-    }
-
+    KSLOG_TRACE("encoded year %d (%02x)", encoded_year, encoded_year);
+    offset += rvlq_encode_32(encoded_year, dst+offset, dst_length - offset);
     return offset;
 }
-
-
 
 int cdate_decode(const uint8_t* src, int src_length, cdate* date)
 {
@@ -160,63 +187,55 @@ int cdate_decode(const uint8_t* src, int src_length, cdate* date)
     {
         return -1;
     }
-    uint128_ct accumulator = *src;
-    const int magnitude = accumulator & MASK_MAGNITUDE;
 
-    const int base_size = g_base_sizes[magnitude] - 1;
-    if(base_size >= src_length)
+    const int shift_magnitude = 6;
+    const uint8_t mask_magnitude = (1<<shift_magnitude) - 1;
+    KSLOG_TRACE("mask mag %02x", mask_magnitude);
+    uint8_t next_byte = src[0];
+        KSLOG_TRACE("Read %d: %02x", 0, src[0]);
+    int src_index = 1;
+
+    int magnitude = next_byte >> shift_magnitude;
+    next_byte &= mask_magnitude;
+    KSLOG_TRACE("next byte masked %02x: %02x", ~mask_magnitude, next_byte);
+
+    int remaining_bytes = g_base_sizes[magnitude] - 1;
+    int src_index_end = src_index + remaining_bytes;
+    KSLOG_TRACE("rem bytes %d, src index %d, src length %d", remaining_bytes, src_index, src_length);
+    if(src_index_end >= src_length)
     {
         return -1;
     }
-    int offset = 1;
-    KSLOG_DEBUG("Accum start %02x", (uint8_t)accumulator);
-    for(; offset < base_size; offset++)
+
+    uint64_t accumulator = next_byte;
+    KSLOG_TRACE("Accum %016lx", accumulator);
+    while(src_index < src_index_end)
     {
-        accumulator |= ((uint128_ct)src[offset]) << ((offset)*8);
-        KSLOG_DEBUG("Accum add %02x %016lx",
-            src[offset],
-            (uint64_t)(((uint128_ct)src[offset]) << ((offset)*8)));
+        KSLOG_TRACE("Read %d: %02x", src_index, src[src_index]);
+        accumulator = (accumulator << 8) | src[src_index];
+        src_index++;
+        KSLOG_TRACE("Accum %016lx", accumulator);
     }
 
-    int shift_amount = (offset)*8;
-    uint8_t next_byte = 0;
-    do
-    {
-        if(offset >= src_length)
-        {
-            return -1;
-        }
-        next_byte = src[offset++];
-        accumulator |= ((uint128_ct)next_byte&0x7f) << shift_amount;
-        KSLOG_DEBUG("Accum add %02x %016lx",
-            next_byte&0x7f,
-            (uint64_t)(((uint128_ct)next_byte&0x7f) << shift_amount));
-        shift_amount += 7;
-    } while(next_byte & 0x80);
+    const int year_high_bits = g_year_high_bits[magnitude];
+    const uint32_t year_high_bits_mask = (1<<year_high_bits) - 1;
 
-    KSLOG_DEBUG("Accumulator: %016lx", (uint64_t)accumulator);
+    uint32_t year_encoded = accumulator & year_high_bits_mask;
+    accumulator >>= year_high_bits;
+    date->month = accumulator & MASK_MONTH;
+    accumulator >>= SIZE_MONTH;
+    date->day = accumulator & MASK_DAY;
+    accumulator >>= SIZE_DAY;
+    date->hour = accumulator & MASK_HOUR;
+    accumulator >>= SIZE_HOUR;
+    date->minute = accumulator & MASK_MINUTE;
+    accumulator >>= SIZE_MINUTE;
+    date->second = accumulator & MASK_SECOND;
+    accumulator >>= SIZE_SECOND;
+    date->nanosecond = accumulator * g_subsec_multipliers[magnitude];
 
-    date->second = (accumulator>>SHIFT_SECOND) & MASK_SECOND;
-    date->minute = (accumulator>>SHIFT_MINUTE) & MASK_MINUTE;
-    date->hour = (accumulator>>SHIFT_HOUR) & MASK_HOUR;
-    date->day = (accumulator>>SHIFT_DAY) & MASK_DAY;
-    date->month = (accumulator>>SHIFT_MONTH) & MASK_MONTH;
-    date->nanosecond = ((unsigned)(accumulator>>SHIFT_SUBSEC) & g_subsec_masks[magnitude]) * g_subsec_multipliers[magnitude];
-    date->year = decode_year(accumulator>>g_year_shifts[magnitude]);
+    int decoded_group_count = rvlq_decode_32(&year_encoded, src + src_index, src_length - src_index);
+    date->year = decode_year(year_encoded);
 
-    KSLOG_TRACE("Magnitude:   %d", magnitude);
-    KSLOG_TRACE("Seconds:     %d", date->second);
-    KSLOG_TRACE("Minutes:     %d", date->minute);
-    KSLOG_TRACE("Hours:       %d", date->hour);
-    KSLOG_TRACE("Days:        %d", date->day);
-    KSLOG_TRACE("Months:      %d", date->month);
-    KSLOG_TRACE("Subseconds:  %d", date->nanosecond);
-    KSLOG_TRACE("Years:       %d", date->year);
-
-    KSLOG_TRACE("subsec shifted %x, mask %x, result %d",
-        (unsigned)(accumulator>>SHIFT_SUBSEC),
-        g_subsec_masks[magnitude],
-        (unsigned)(accumulator>>SHIFT_SUBSEC) & g_subsec_masks[magnitude]);
-
-    return offset;
+    return src_index + decoded_group_count;
 }

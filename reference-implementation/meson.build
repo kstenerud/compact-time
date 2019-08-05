@@ -22,6 +22,7 @@ project_test_files = [
 cc = meson.get_compiler('c')
 
 project_dependencies = [
+  dependency('vlq', fallback : ['vlq', 'vlq_dep'])
 ]
 
 build_args = [

@@ -29,7 +29,7 @@ static void demonstrate_encode()
 
 static void demonstrate_decode()
 {
-    std::vector<uint8_t> data = {0x50, 0x13, 0x3a, 0x31};
+    std::vector<uint8_t> data = {0x14, 0x4d, 0x07, 0x10, 0x03};
     cdate date;
     cdate_decode(data.data(), data.size(), &date);
     printf("%04d-%02d-%02d %02d:%02d:%02d.%d\n",
@@ -39,6 +39,6 @@ static void demonstrate_decode()
 
 TEST(Readme, example)
 {
-	demonstrate_encode();
+    demonstrate_encode();
     demonstrate_decode();
 }

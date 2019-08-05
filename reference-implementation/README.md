@@ -36,13 +36,13 @@ static void demonstrate_encode()
 
 Output:
 
-    3b e1 f3 b8 9e ab 12 a0 01
+    c1 2a b9 eb 3a 17 fa 00 28
 
 
 ```cpp
 static void demonstrate_decode()
 {
-    std::vector<uint8_t> data = {0x50, 0x13, 0x3a, 0x31};
+    std::vector<uint8_t> data = {0x14, 0x4d, 0x07, 0x10, 0x03};
     cdate date;
     cdate_decode(data.data(), data.size(), &date);
     printf("%04d-%02d-%02d %02d:%02d:%02d.%d\n",
