@@ -38,16 +38,16 @@ The date structure is conceptually an unsigned integer with the following bit en
 
 All fields up to and including the upper bits of the year field are encoded as a single, big endian encoded value with a base size from 4 to 8 bytes (depending on the presence and type of sub-second data). The remaining lower year bits are encoded into a [RVLQ](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md).
 
-The `sub-second magnitude` field determines how many bits of sub-second data are present, which affects the minimum size of the entire structure, the minimum number of year bits available (including those in the initial RVLQ), and the year range possible at the minimal byte size:
+The `sub-second magnitude` field determines how many bits of sub-second data are present, which affects the minimum size of the entire structure, the minimum number of year bits available (including the 7 bits in the initial RVLQ), and the year range possible at the minimal byte size:
 
-| Value | Sub-second Data             | Min Bytes | Min Year Bits | Min Year Range |
-| ----- | --------------------------- | --------- | ------------- | -------------- |
-|   00  | No sub-second data          |         5 |            11 |     976 - 3023 |
-|   01  | 10 bits of millisecond data |         6 |             9 |    1744 - 2255 |
-|   10  | 20 bits of microsecond data |         7 |             7 |    1872 - 2127 |
-|   11  | 30 bits of nanosecond data  |         9 |            13 |   -2096 - 6095 |
+| Magnitude | Sub-second Data             | Min Bytes | Min Year Bits | Min Year Range |
+| --------- | --------------------------- | --------- | ------------- | -------------- |
+|     00    | No sub-second data          |     5     |        11 (4) |     976 - 3023 |
+|     01    | 10 bits of millisecond data |     6     |         9 (2) |    1744 - 2255 |
+|     10    | 20 bits of microsecond data |     7     |         7 (0) |    1936 - 2063 |
+|     11    | 30 bits of nanosecond data  |     9     |        13 (6) |   -2096 - 6095 |
 
-The lower bits of the base structure contain the upper bits of the year field, which is then continued in the RVLQ that follows (minimum 1 byte). More year bits can be added by extending the RVLQ.
+The lower bits of the base structure contain the upper bits of the year field (0-6 bits, depending on sub-second magnitude), which is then continued in the RVLQ that follows (minimum 1 group: 7 bits). More year bits can be added by extending the RVLQ.
 
 | Field                | Bits | Notes                   |
 | -------------------- | ---- | ----------------------- |
@@ -59,8 +59,8 @@ The lower bits of the base structure contain the upper bits of the year field, w
 | Day                  |    5 |                         |
 | Month                |    4 |                         |
 | Year (high bits)     |  0-6 | Low bit                 |
-| Continuation         |    1 | RVLQ start              |
-| Year (next 7 bits)   |    7 |                         |
+| Continuation         |    1 | RVLQ starts here        |
+| Year (next 7 bits)   |    7 | RVLQ first payload      |
 | ...                  |  ... | RVLQ continues (or not) |
 
 The year field is encoded as a [zigzag signed integer](#zigzag-integer), with a value relative to the epoch date 00:00:00 on January 1st, 2000. Dates closer to this epoch can be stored in fewer bits.
@@ -100,7 +100,7 @@ Dates prior to the introduction of the Gregorian Calendar in 1582 must be stored
 Time Zone
 ---------
 
-Values must be relative to UTC, unless other outside accompanying data or agreements specify otherwise.
+The time zone of the date is UTC, unless other accompanying data or agreements between parties specify otherwise.
 
 
 
@@ -124,23 +124,23 @@ The sub-second portion of this date goes to the millisecond, which requires a ma
 
 Initial 40 bit structure:
 
-| Field                | Width | Value | Encoded    |
-| -------------------- | ----- | ----- | ---------- |
-| Sub-second Magnitude |     2 |     1 |         01 |
-| Sub-seconds          |    10 |   180 | 0010110100 |
-| Second               |     6 |     4 |     000100 |
-| Minute               |     6 |    53 |     110101 |
-| Hour                 |     5 |    17 |      10001 |
-| Day                  |     5 |    24 |      11000 |
-| Month                |     4 |     6 |       0110 |
-| Year (high bits)     |     2 |     0 |         00 |
+| Field                | Width | Value | Encoded      |
+| -------------------- | ----- | ----- | ------------ |
+| Sub-second Magnitude |     2 |     1 | `        01` |
+| Sub-seconds          |    10 |   180 | `0010110100` |
+| Second               |     6 |     4 | `    000100` |
+| Minute               |     6 |    53 | `    110101` |
+| Hour                 |     5 |    17 | `     10001` |
+| Day                  |     5 |    24 | `     11000` |
+| Month                |     4 |     6 | `      0110` |
+| Year (high bits)     |     2 |     0 | `        00` |
 
 RVLQ:
 
-| Field                | Width | Value | Encoded    |
-| -------------------- | ----- | ----- | ---------- |
-| Continuation         |     1 |     0 |          0 |
-| Year (next 7 bits)   |     7 |  0x26 |    0100110 |
+| Field                | Width | Value | Encoded   |
+| -------------------- | ----- | ----- | --------- |
+| Continuation         |     1 |     0 | `      0` |
+| Year (next 7 bits)   |     7 |  0x26 | `0100110` |
 
 Encoded value:
 
@@ -165,23 +165,23 @@ Year is calculated as `2000` - `2`, encoded as zigzag: `0x03`.
 
 Initial 32 bit structure:
 
-| Field                | Width | Value | Encoded    |
-| -------------------- | ----- | ----- | ---------- |
-| Sub-second Magnitude |     2 |     0 |         00 |
-| Sub-seconds          |     0 |     - |          - |
-| Second               |     6 |    20 |     010100 |
-| Minute               |     6 |    19 |     010011 |
-| Hour                 |     5 |     8 |      01000 |
-| Day                  |     5 |     7 |      00111 |
-| Month                |     4 |     1 |       0001 |
-| Year (high bits)     |     4 |     0 |       0000 |
+| Field                | Width | Value | Encoded  |
+| -------------------- | ----- | ----- | -------- |
+| Sub-second Magnitude |     2 |     0 | `    00` |
+| Sub-seconds          |     0 |     - | `     -` |
+| Second               |     6 |    20 | `010100` |
+| Minute               |     6 |    19 | `010011` |
+| Hour                 |     5 |     8 | ` 01000` |
+| Day                  |     5 |     7 | ` 00111` |
+| Month                |     4 |     1 | `  0001` |
+| Year (high bits)     |     4 |     0 | `  0000` |
 
 RVLQ:
 
-| Field                | Width | Value | Encoded    |
-| -------------------- | ----- | ----- | ---------- |
-| Continuation         |     1 |     0 |          0 |
-| Year (next 7 bits)   |     7 |  0x03 |    0000011 |
+| Field                | Width | Value | Encoded   |
+| -------------------- | ----- | ----- | --------- |
+| Continuation         |     1 |     0 | `      0` |
+| Year (next 7 bits)   |     7 |  0x03 | `0000011` |
 
 Encoded value:
 
@@ -206,25 +206,25 @@ Year is calculated as `2000` + `1190 (0x4a6)`, encoded as zigzag: `0x94c`.
  1001 0100 1100
 Initial 48 bit structure:
 
-| Field                | Width | Value  | Encoded              |
-| -------------------- | ----- | ------ | -------------------- |
-| Sub-second Magnitude |     2 |      2 |                   10 |
-| Sub-seconds          |    30 | 394129 | 01100000001110010001 |
-| Second               |     6 |     47 |               101111 |
-| Minute               |     6 |     54 |               110110 |
-| Hour                 |     5 |      0 |                00000 |
-| Day                  |     5 |     31 |                11111 |
-| Month                |     4 |      8 |                 1000 |
-| Year (high bits)     |     0 |      - |                    - |
+| Field                | Width | Value  | Encoded                |
+| -------------------- | ----- | ------ | ---------------------- |
+| Sub-second Magnitude |     2 |      2 | `                  10` |
+| Sub-seconds          |    30 | 394129 | `01100000001110010001` |
+| Second               |     6 |     47 | `              101111` |
+| Minute               |     6 |     54 | `              110110` |
+| Hour                 |     5 |      0 | `               00000` |
+| Day                  |     5 |     31 | `               11111` |
+| Month                |     4 |      8 | `                1000` |
+| Year (high bits)     |     0 |      - | `                   -` |
 
 The year value 0x94c (`100101001100`) is encoded into 14 bits of RVLQ data:
 
-| Field                | Width | Value | Encoded    |
-| -------------------- | ----- | ----- | ---------- |
-| Continuation         |     1 |     1 |          1 |
-| Year (next 7 bits)   |     7 |  0x03 |    0010010 |
-| Continuation         |     1 |     0 |          0 |
-| Year (next 7 bits)   |     7 |  0x03 |    1001100 |
+| Field                | Width | Value | Encoded   |
+| -------------------- | ----- | ----- | --------- |
+| Continuation         |     1 |     1 | `      1` |
+| Year (next 7 bits)   |     7 |  0x03 | `0010010` |
+| Continuation         |     1 |     0 | `      0` |
+| Year (next 7 bits)   |     7 |  0x03 | `1001100` |
 
 Encoded value:
 
