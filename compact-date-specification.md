@@ -1,7 +1,7 @@
 Compact Date Format
 ===================
 
-Compact date format is an encoding scheme to store a complete date in as few bytes as possible for data transmission. Any Gregorian or propleptic Gregorian date can be recorded to the nanosecond using this encoding.
+Compact date format is an encoding scheme to store a complete date in as few bytes as possible for data transmission. Any Gregorian or propleptic Gregorian date can be recorded down to the nanosecond using this encoding.
 
 Dates are stored relative to the epoch date of January 1st, 2000, with a UTC timezone unless accompanying timezone information is provided (accompanying time zone information is outside of the scope of this document).
 
@@ -25,20 +25,30 @@ Encoded Structure
 
 The date structure is conceptually an unsigned integer with the following bit encoded fields:
 
-| Field                | Bits | Min | Max       | Notes                      |
-| -------------------- | ---- | --- | --------- | -------------------------- |
-| Sub-second Magnitude |    2 |   0 |         3 |                            |
-| Sub-seconds          | 0-30 |   0 | 999999999 | Variable bit-width         |
-| Second               |    6 |   0 |        60 | 60 to support leap seconds |
-| Minute               |    6 |   0 |        59 |                            |
-| Hour                 |    5 |   0 |        23 |                            |
-| Day                  |    5 |   1 |        31 |                            |
-| Month                |    4 |   1 |        12 |                            |
-| Year                 |    * |   * |         * | RVLQ, relative to 2000     |
+| Field                | Bits | Min | Max       | Notes                                    |
+| -------------------- | ---- | --- | --------- | ---------------------------------------- |
+| Sub-second Magnitude |    2 |   0 |         3 |                                          |
+| Sub-seconds          | 0-30 |   0 | 999999999 | Variable bit-width                       |
+| Second               |    6 |   0 |        60 | 60 to support leap seconds               |
+| Minute               |    6 |   0 |        59 |                                          |
+| Hour                 |    5 |   0 |        23 |                                          |
+| Day                  |    5 |   1 |        31 |                                          |
+| Month                |    4 |   1 |        12 |                                          |
+| Year (high bits)     |  0-6 |   * |         * | Brings structure to a multiple of 8 bits |
 
-All fields up to and including the upper bits of the year field are encoded as a single, big endian encoded value with a base size from 4 to 8 bytes (depending on the presence and type of sub-second data). The remaining lower year bits are encoded into a [RVLQ](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md).
+Followed by a [RVLQ](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md) for the remainder of the `year` bits:
 
-The `sub-second magnitude` field determines how many bits of sub-second data are present, which affects the minimum size of the entire structure, the minimum number of year bits available (including the 7 bits in the initial RVLQ), and the year range possible at the minimal byte size:
+| Field                | Bits | Min | Max       | Notes                                    |
+| -------------------- | ---- | --- | --------- | ---------------------------------------- |
+| Year (low bits)      |  7-* |   * |         * | Encoded as RVLQ                          |
+
+All fields up to and including the upper bits of the `year` field are encoded into a single, big endian encoded initial structure with a base size from 4 to 8 bytes (depending on the presence and type of sub-second data). The number of upper bits of the `year` field varies with the size of the `sub-seconds` field to bring the initial structure to a multiple of 8 bits. The lower bits of the `year` field are encoded into a RVLQ. The RVLQ portion is always present, even when technically unnecessary, and so the actual minimum size of the compact date ranges from 5 to 9 bytes.
+
+The `sub-second magnitude` field determines how many bits of `sub-second` data are present, which affects:
+
+* the minimum size of the entire structure
+* the minimum number of year bits available (including the minimum 7 bits in the RVLQ)
+* the year range possible at the minimun structure byte size
 
 | Magnitude | Sub-second Data             | Min Bytes | Min Year Bits | Min Year Range |
 | --------- | --------------------------- | --------- | ------------- | -------------- |
@@ -47,23 +57,14 @@ The `sub-second magnitude` field determines how many bits of sub-second data are
 |     10    | 20 bits of microsecond data |     7     |         7 (0) |    1936 - 2063 |
 |     11    | 30 bits of nanosecond data  |     9     |        13 (6) |   -2096 - 6095 |
 
-The lower bits of the base structure contain the upper bits of the year field (0-6 bits, depending on sub-second magnitude), which is then continued in the RVLQ that follows (minimum 1 group: 7 bits). More year bits can be added by extending the RVLQ.
+The `year` field is encoded as a [zigzag signed integer](#zigzag-integer), with a value relative to the epoch date 00:00:00 on January 1st, 2000. Dates closer to this epoch can be stored in fewer bits.
 
-| Field                | Bits | Notes                   |
-| -------------------- | ---- | ----------------------- |
-| Sub-second Magnitude |    2 | High bit                |
-| Sub-seconds          | 0-30 |                         |
-| Second               |    6 |                         |
-| Minute               |    6 |                         |
-| Hour                 |    5 |                         |
-| Day                  |    5 |                         |
-| Month                |    4 |                         |
-| Year (high bits)     |  0-6 | Low bit                 |
-| Continuation         |    1 | RVLQ starts here        |
-| Year (next 7 bits)   |    7 | RVLQ first payload      |
-| ...                  |  ... | RVLQ continues (or not) |
 
-The year field is encoded as a [zigzag signed integer](#zigzag-integer), with a value relative to the epoch date 00:00:00 on January 1st, 2000. Dates closer to this epoch can be stored in fewer bits.
+
+Why Big Endian?
+---------------
+
+Little endian ordering makes sense for fixed data sizes (because most hardware is little endian these days), and for left-oriented variable length data (where the `1` bits cluster on the left side of the field). However, hardware decoding offers little advantage for variable sized data structures, and compact date's right-oriented data can be progressively decoded with the lowest algorithmic complexity if it's big endian ordered ([explanation here](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md#why-not-varint)).
 
 
 
@@ -200,7 +201,7 @@ Encoded value:
 
     August 31, 3190, 00:54:47.394129
 
-Magnitude is 3 to support nanoseconds. Our base structure is 64 bits, containing 6 high year bits.
+The sub-second portion of this date goes to the microsecond, which requires a magnitude field of 2. Magnitude 2 implies a base structure of 48 bits, containing no bits of year data (year data is entirely in the RVLQ).
 
 Year is calculated as `2000` + `1190 (0x4a6)`, encoded as zigzag: `0x94c`.
  1001 0100 1100
@@ -209,7 +210,7 @@ Initial 48 bit structure:
 | Field                | Width | Value  | Encoded                |
 | -------------------- | ----- | ------ | ---------------------- |
 | Sub-second Magnitude |     2 |      2 | `                  10` |
-| Sub-seconds          |    30 | 394129 | `01100000001110010001` |
+| Sub-seconds          |    20 | 394129 | `01100000001110010001` |
 | Second               |     6 |     47 | `              101111` |
 | Minute               |     6 |     54 | `              110110` |
 | Hour                 |     5 |      0 | `               00000` |
