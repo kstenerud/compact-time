@@ -8,13 +8,13 @@ Compact date format is an encoding scheme to store a complete date, down to the 
 Features
 --------
 
- * Encodes a complete date & time into as few as 32 bits.
+ * Encodes a complete date & time into as few as 5 bytes.
  * Maintenance-free (no leap second tables to update).
- * Easily converts to human readable fields.
- * Supports all years in both directions, in perpetuity.
- * Supports time units to the nanosecond.
+ * Efficient conversion to/from human readable fields (no multiplication or division).
+ * Supports unlimited positive and negative years.
+ * Supports time units down to the nanosecond.
  * Supports leap years and leap seconds.
- * Dates are in UTC by default.
+ * Dates are relative to UTC by default.
 
 
 
@@ -31,6 +31,7 @@ Implementations
 ---------------
 
 * [C implementation](reference-implementation)
+* [Go implementation](https://github.com/kstenerud/go-compact-date)
 
 
 
