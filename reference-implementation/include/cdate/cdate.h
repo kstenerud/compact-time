@@ -37,13 +37,6 @@
     #endif
 #endif
 
-#ifndef ANSI_EXTENSION
-    #ifdef __GNUC__
-        #define ANSI_EXTENSION __extension__
-    #else
-        #define ANSI_EXTENSION
-    #endif
-#endif
 
 #ifdef __cplusplus 
 extern "C" {
@@ -58,13 +51,13 @@ extern "C" {
 
 typedef struct
 {
+    uint32_t nanosecond;
     int32_t year;
     uint8_t month;
     uint8_t day;
     uint8_t hour;
     uint8_t minute;
     uint8_t second;
-    uint32_t nanosecond;
 } cdate;
 
 /**
@@ -83,7 +76,7 @@ CDATE_PUBLIC int cdate_encoded_size(cdate* date);
 /**
  * Encode a date to a destination buffer.
  *
- * Returns the number of bytes written to encode the date, or -1 if there wasn't
+ * Returns the number of bytes written to encode the date, or 0 if there wasn't
  * enough room.
  */
 CDATE_PUBLIC int cdate_encode(const cdate* date, uint8_t* dst, int dst_length);
@@ -91,7 +84,7 @@ CDATE_PUBLIC int cdate_encode(const cdate* date, uint8_t* dst, int dst_length);
 /**
  * Decode a date from a source buffer.
  *
- * Returns the number of bytes read to decode the date, or -1 if there wasn't
+ * Returns the number of bytes read to decode the date, or 0 if there wasn't
  * enough data.
  */
 CDATE_PUBLIC int cdate_decode(const uint8_t* src, int src_length, cdate* date);
@@ -100,4 +93,5 @@ CDATE_PUBLIC int cdate_decode(const uint8_t* src, int src_length, cdate* date);
 #ifdef __cplusplus 
 }
 #endif
+
 #endif // KS_cdate_H
