@@ -146,7 +146,7 @@ const char* cdate_version()
     return EXPAND_AND_QUOTE(PROJECT_VERSION);
 }
 
-int cdate_encoded_size(cdate* date)
+int cdate_encoded_size(const cdate* date)
 {
     const int magnitude = get_subsecond_magnitude(date);
     const int base_byte_count = get_base_byte_count(magnitude);

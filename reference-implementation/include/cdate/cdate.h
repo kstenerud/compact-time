@@ -71,7 +71,7 @@ CDATE_PUBLIC const char* cdate_version();
  * Calculate the number of bytes that would be occupied by this date when
  * encoded.
  */
-CDATE_PUBLIC int cdate_encoded_size(cdate* date);
+CDATE_PUBLIC int cdate_encoded_size(const cdate* date);
 
 /**
  * Encode a date to a destination buffer.
