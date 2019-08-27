@@ -1,20 +1,24 @@
-Compact Date Format
+Compact Time Format
 ===================
 
-Compact date format is an encoding scheme to store a complete date, down to the nanosecond, in as few bytes as possible.
+The compact time formats are encoding schemes to store a complete time, date, or timestamp in as few bytes as possible for data transmission.
+
+Any Gregorian or proleptic Gregorian date can be recorded to the nanosecond using this encoding.
 
 
 
 Features
 --------
 
- * Encodes a complete date & time into as few as 5 bytes.
- * Maintenance-free (no leap second tables to update).
- * Efficient conversion to/from human readable fields (no multiplication or division).
- * Supports unlimited positive and negative years.
+ * Encodes a date into as few as 3 bytes.
+ * Encodes a time into as few as 4 bytes.
+ * Encodes a timestamp into as few as 5 bytes.
+ * Supports unlimited positive and negative year values.
  * Supports time units down to the nanosecond.
  * Supports leap years and leap seconds.
- * Dates are relative to UTC by default.
+ * Maintenance-free (no leap second tables to update).
+ * Efficient conversion to/from human readable fields (no multiplication or division).
+ * Time zones are location-based, not offset-based.
 
 
 
@@ -23,7 +27,7 @@ Specifications
 
 This specification is part of the [Specification Project](https://github.com/kstenerud/specifications)
 
-* [Compact Date Format Specification](compact-date-specification.md)
+* [Compact Time Format Specification](compact-time-specification.md)
 
 
 
