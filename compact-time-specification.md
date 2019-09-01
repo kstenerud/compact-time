@@ -163,7 +163,7 @@ Latitude and longitude are stored as two's complement signed integers representi
 
 The location, combined with an associated date, refers to the time zone that location falls under on that particular date. Location data should ideally be within the boundaries of a politically notable region whenever possible.
 
-Note: Time zone values that contain different longitude/latitude values, but still refer to the same time zone at their particular time (for example, [48.85, 2.32] on Aug 10, 2019, and [48.90, 2.28] on Jan 1, 2000, which both refer to Europe/Paris), are considered equal.
+Note: Time zone values that contain different longitude/latitude values, but still refer to the same time zone at their particular time (for example, [48.85, 2.32] on Dec 10, 2010, and [48.90, 2.28] on Jan 1, 2000, which both refer to Europe/Paris in the same daylight savings mode), are considered equal.
 
 Pros:
 

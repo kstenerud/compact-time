@@ -27,20 +27,24 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-#include "cdate/cdate.h"
+// #define KSLog_FileDesriptor STDOUT_FILENO
+// #define KSLog_LocalMinLevel KSLOG_LEVEL_TRACE
+// #include <kslog/kslog.h>
+
+#include "compact_time/compact_time.h"
+#include <endianness/endianness.h>
 
 #include <vlq/vlq.h>
-
-// #define KSLogger_LocalLevel TRACE
-// #include "kslogger.h"
 
 #define QUOTE(str) #str
 #define EXPAND_AND_QUOTE(str) QUOTE(str)
 
 static const int YEAR_BIAS = 2000;
 static const int BITS_PER_YEAR_GROUP = 7;
-static const int OPERATION_FAILED = 0;
 
+#define FAILURE_AT_POS(A) -(A)
+
+#define SIZE_UTC       1
 #define SIZE_MAGNITUDE 2
 #define SIZE_SUBSECOND 10
 #define SIZE_SECOND    6
@@ -49,28 +53,39 @@ static const int OPERATION_FAILED = 0;
 #define SIZE_DAY       5
 #define SIZE_MONTH     4
 
-static const unsigned MASK_SECOND = ((1<<SIZE_SECOND)-1);
-static const unsigned MASK_MINUTE = ((1<<SIZE_MINUTE)-1);
-static const unsigned MASK_HOUR   = ((1<<SIZE_HOUR)-1);
-static const unsigned MASK_DAY    = ((1<<SIZE_DAY)-1);
-static const unsigned MASK_MONTH  = ((1<<SIZE_MONTH)-1);
+#define SIZE_LATITUDE  15
+#define SIZE_LONGITUDE 14
 
-static const int g_base_sizes[] = { 4, 5, 6, 8 };
+
+// static const int BASE_SIZE_TIME = SIZE_UTC + SIZE_MAGNITUDE + SIZE_SECOND + SIZE_MINUTE + SIZE_HOUR;
+static const int BASE_SIZE_TIMESTAMP = SIZE_MAGNITUDE + SIZE_SECOND + SIZE_MINUTE + SIZE_HOUR + SIZE_DAY + SIZE_MONTH;
+
+static const unsigned MASK_MAGNITUDE = ((1<<SIZE_MAGNITUDE)-1);
+static const unsigned MASK_SECOND    = ((1<<SIZE_SECOND)-1);
+static const unsigned MASK_MINUTE    = ((1<<SIZE_MINUTE)-1);
+static const unsigned MASK_HOUR      = ((1<<SIZE_HOUR)-1);
+static const unsigned MASK_DAY       = ((1<<SIZE_DAY)-1);
+static const unsigned MASK_MONTH     = ((1<<SIZE_MONTH)-1);
+
+static const unsigned MASK_LATITUDE  = ((1<<SIZE_LATITUDE)-1);
+static const unsigned MASK_LONGITUDE = ((1<<SIZE_LONGITUDE)-1);
+
+static const int g_base_timestamp_sizes[] = { 4, 5, 6, 8 };
 static const int g_year_high_bits[] = { 4, 2, 0, 6 };
 static const unsigned g_subsec_multipliers[] = { 1, 1000000, 1000, 1 };
 
 
-static int get_subsecond_magnitude(const cdate* const date)
+static int get_subsecond_magnitude(const uint32_t nanoseconds)
 {
-    if(date->nanosecond == 0)
+    if(nanoseconds == 0)
     {
         return 0;
     }
-    if((date->nanosecond % 1000) != 0)
+    if((nanoseconds % 1000) != 0)
     {
         return 3;
     }
-    if((date->nanosecond % 1000000) != 0)
+    if((nanoseconds % 1000000) != 0)
     {
         return 2;
     }
@@ -92,47 +107,134 @@ static unsigned encode_year(const int year)
     return zigzag_encode(year - YEAR_BIAS);
 }
 
+static unsigned encode_year_and_utc_flag(const int year, const int is_utc_timezone)
+{
+    return (encode_year(year) << 1) | is_utc_timezone;
+}
+
 static int decode_year(const unsigned encoded_year)
 {
     return zigzag_decode(encoded_year) + YEAR_BIAS;
 }
 
-static int get_base_byte_count(int magnitude)
+static int get_base_byte_count(int base_size, int magnitude)
 {
-    return (SIZE_MAGNITUDE
-           + SIZE_SUBSECOND * magnitude
-           + SIZE_SECOND
-           + SIZE_MINUTE
-           + SIZE_HOUR
-           + SIZE_DAY
-           + SIZE_MONTH
-           + g_year_high_bits[magnitude])
-           / 8;
+    const int size = base_size + SIZE_SUBSECOND * magnitude;
+    const int8_t remainder = size & 7;
+    const int extra_byte = ((remainder | (-remainder)) >> 7) & 1;
+    return size / 8 + extra_byte;
 }
 
-static int get_year_group_count(uint32_t encoded_year, int subsecond_magnitude)
+static int get_year_group_count(uint32_t encoded_year, int uncounted_bits)
 {
-    const int extra_bit_count = g_year_high_bits[subsecond_magnitude];
-    uint32_t year = encoded_year >> BITS_PER_YEAR_GROUP;
+    uint32_t year = encoded_year >> uncounted_bits;
     if(year == 0)
     {
         return 1;
     }
 
-    int size = 1;
+    int size = 0;
     while(year != 0)
     {
         size++;
         year >>= BITS_PER_YEAR_GROUP;
     }
+    return size;
+}
 
-    uint32_t extra_mask = (1<<extra_bit_count) - 1;
-    uint32_t last_group_bits = encoded_year >> (BITS_PER_YEAR_GROUP * (size-1));
-    if(last_group_bits & ~extra_mask)
+static int timezone_encoded_size(const ct_timezone* timezone)
+{
+    switch(timezone->type)
     {
+        case CT_TZ_STRING:
+            return strlen(timezone->data.as_string) + 1;
+        case CT_TZ_LATLONG:
+            return 4;
+        case CT_TZ_ZERO:
+            return 0;
+        default:
+            // TODO: Maybe panic?
+            return 0;
+    }
+}
+
+static int timezone_encode(const ct_timezone* timezone, uint8_t* dst, int dst_length)
+{
+    switch(timezone->type)
+    {
+        case CT_TZ_ZERO:
+            return 0;
+        case CT_TZ_STRING:
+        {
+            const int string_length = strlen(timezone->data.as_string);
+            if(string_length + 1 > dst_length)
+            {
+                return FAILURE_AT_POS(string_length + 1);
+            }
+            dst[0] = string_length << 1;
+            memcpy(dst+1, timezone->data.as_string, string_length);
+            return string_length + 1;
+        }
+        case CT_TZ_LATLONG:
+        {
+            uint32_t value =
+                (timezone->data.as_location.longitude << SIZE_LATITUDE) |
+                (timezone->data.as_location.latitude << 1) |
+                1;
+            int length = sizeof(value);
+            if(length > dst_length)
+            {
+                return FAILURE_AT_POS(length);
+            }
+            write_uint32_le(value, dst);
+            return length;
+        }
+        default:
+            return 0;
+    }
+}
+
+static int timezone_decode(ct_timezone* timezone, const uint8_t* src, int src_length, bool timezone_is_utc)
+{
+    if(timezone_is_utc)
+    {
+        timezone->type = CT_TZ_ZERO;
+        return 0;
+    }
+
+    if(src_length < 1)
+    {
+        return FAILURE_AT_POS(1);
+    }
+
+    bool is_latlong = src[0] & 1;
+    if(is_latlong)
+    {
+        int size = sizeof(uint32_t);
+        if(size > src_length)
+        {
+            return FAILURE_AT_POS(size);
+        }
+        timezone->type = CT_TZ_LATLONG;
+        uint32_t latlong = read_uint32_le(src) >> 1;
+        timezone->data.as_location.latitude = latlong & MASK_LATITUDE;
+        latlong >>= SIZE_LATITUDE;
+        timezone->data.as_location.longitude = latlong & MASK_LONGITUDE;
         return size;
     }
-    return size - 1;
+
+    int offset = 0;
+    const int length = src[offset] >> 1;
+    offset++;
+    if(offset + length > src_length)
+    {
+        return FAILURE_AT_POS(offset + length);
+    }
+    timezone->type = CT_TZ_STRING;
+    memcpy(timezone->data.as_string, src+offset, length);
+    timezone->data.as_string[offset + length] = 0;
+    offset += length;
+    return offset;
 }
 
 
@@ -141,106 +243,117 @@ static int get_year_group_count(uint32_t encoded_year, int subsecond_magnitude)
 // Public API
 // ----------
 
-const char* cdate_version()
+const char* ct_version()
 {
     return EXPAND_AND_QUOTE(PROJECT_VERSION);
 }
 
-int cdate_encoded_size(const cdate* date)
+int ct_timestamp_encoded_size(const ct_timestamp* timestamp)
 {
-    const int magnitude = get_subsecond_magnitude(date);
-    const int base_byte_count = get_base_byte_count(magnitude);
-    const unsigned encoded_year = encode_year(date->year);
-    const int year_group_count = get_year_group_count(encoded_year, magnitude);
+    const int magnitude = get_subsecond_magnitude(timestamp->time.nanosecond);
+    const int base_byte_count = get_base_byte_count(BASE_SIZE_TIMESTAMP, magnitude);
+    const unsigned encoded_year = encode_year(timestamp->date.year);
+    const int year_group_count = get_year_group_count(encoded_year<<1, g_year_high_bits[magnitude]);
 
-    return base_byte_count + year_group_count;
+    return base_byte_count + year_group_count + timezone_encoded_size(&timestamp->time.timezone);
 }
 
-int cdate_encode(const cdate* date, uint8_t* dst, int dst_length)
+int ct_timestamp_encode(const ct_timestamp* timestamp, uint8_t* dst, int dst_length)
 {
-    const int magnitude = get_subsecond_magnitude(date);
-    const int base_byte_count = get_base_byte_count(magnitude);
-    const unsigned encoded_year = encode_year(date->year);
-    const int year_group_count = get_year_group_count(encoded_year, magnitude);
-
-    if(base_byte_count + year_group_count > dst_length)
-    {
-        return OPERATION_FAILED;
-    }
-
-    const uint64_t subsecond = date->nanosecond / g_subsec_multipliers[magnitude];
-    const int year_group_bit_count = year_group_count*BITS_PER_YEAR_GROUP;
+    const int magnitude = get_subsecond_magnitude(timestamp->time.nanosecond);
+    const uint64_t subsecond = timestamp->time.nanosecond / g_subsec_multipliers[magnitude];
+    const unsigned encoded_year = encode_year_and_utc_flag(timestamp->date.year, timestamp->time.timezone.type == CT_TZ_ZERO);
+    const int year_group_count = get_year_group_count(encoded_year, g_year_high_bits[magnitude]);
+    const int year_group_bit_count = year_group_count * BITS_PER_YEAR_GROUP;
     const unsigned year_grouped_mask = (1<<year_group_bit_count) - 1;
 
-    uint64_t accumulator = magnitude;
+    uint64_t accumulator = encoded_year >> year_group_bit_count;
     accumulator = (accumulator << (SIZE_SUBSECOND * magnitude)) + subsecond;
-    accumulator = (accumulator << SIZE_SECOND) + date->second;
-    accumulator = (accumulator << SIZE_MINUTE) + date->minute;
-    accumulator = (accumulator << SIZE_HOUR) + date->hour;
-    accumulator = (accumulator << SIZE_DAY) + date->day;
-    accumulator = (accumulator << SIZE_MONTH) + date->month;
-    accumulator = (accumulator << g_year_high_bits[magnitude]) + (encoded_year >> year_group_bit_count);
-
-    const unsigned encoded_year_chopped = encoded_year & year_grouped_mask;
+    accumulator = (accumulator << SIZE_MONTH) + timestamp->date.month;
+    accumulator = (accumulator << SIZE_DAY) + timestamp->date.day;
+    accumulator = (accumulator << SIZE_HOUR) + timestamp->time.hour;
+    accumulator = (accumulator << SIZE_MINUTE) + timestamp->time.minute;
+    accumulator = (accumulator << SIZE_SECOND) + timestamp->time.second;
+    accumulator = (accumulator << SIZE_MAGNITUDE) + magnitude;
 
     int offset = 0;
-    for(int i = base_byte_count-1; i >= 0; i--)
+    const int accumulator_size = g_base_timestamp_sizes[magnitude];
+    if(accumulator_size > dst_length)
     {
-        dst[offset++] = (uint8_t)(accumulator >> (8*i));
+        return FAILURE_AT_POS(accumulator_size);
     }
+    copy_le(&accumulator, dst + offset, accumulator_size);
+    offset += accumulator_size;
+    const int rvlq_byte_count = rvlq_encode_32(encoded_year & year_grouped_mask, dst+offset, dst_length - offset);
+    if(rvlq_byte_count <= 0)
+    {
+        return FAILURE_AT_POS(offset) + rvlq_byte_count;
+    }
+    offset += rvlq_byte_count;
 
-    offset += rvlq_encode_32(encoded_year_chopped, dst+offset, dst_length - offset);
+    const int timezone_byte_count = timezone_encode(&timestamp->time.timezone, dst+offset, dst_length-offset);
+    if(timezone_byte_count < 0)
+    {
+        return FAILURE_AT_POS(offset) + timezone_byte_count;
+    }
+    offset += timezone_byte_count;
+
     return offset;
 }
 
-int cdate_decode(const uint8_t* src, int src_length, cdate* date)
+int ct_timestamp_decode(const uint8_t* src, int src_length, ct_timestamp* timestamp)
 {
     if(src_length < 1)
     {
-        return OPERATION_FAILED;
+        return FAILURE_AT_POS(1);
     }
 
-    const int shift_magnitude = 6;
-    const uint8_t mask_magnitude = (1<<shift_magnitude) - 1;
-    uint8_t next_byte = src[0];
-    int src_index = 1;
+    const int magnitude = src[0] & MASK_MAGNITUDE;
+    const int subsecond_multiplier = g_subsec_multipliers[magnitude];
+    const int size_subsecond = SIZE_SUBSECOND * magnitude;
+    const unsigned mask_subsecond = (1 << size_subsecond) - 1;
 
-    const int magnitude = next_byte >> shift_magnitude;
-    next_byte &= mask_magnitude;
-
-    const int remaining_bytes = g_base_sizes[magnitude] - 1;
-    const int src_index_end = src_index + remaining_bytes;
-    if(src_index_end >= src_length)
+    int offset = g_base_timestamp_sizes[magnitude];
+    if(offset >= src_length)
     {
-        return OPERATION_FAILED;
+        return FAILURE_AT_POS(offset);
     }
 
-    uint64_t accumulator = next_byte;
-    while(src_index < src_index_end)
-    {
-        accumulator = (accumulator << 8) | src[src_index];
-        src_index++;
-    }
+    uint64_t accumulator = 0;
+    copy_le(src, &accumulator, offset);
 
-    const int year_high_bits = g_year_high_bits[magnitude];
-    const uint32_t year_high_bits_mask = (1<<year_high_bits) - 1;
-
-    uint32_t year_encoded = accumulator & year_high_bits_mask;
-    accumulator >>= year_high_bits;
-    date->month = accumulator & MASK_MONTH;
-    accumulator >>= SIZE_MONTH;
-    date->day = accumulator & MASK_DAY;
-    accumulator >>= SIZE_DAY;
-    date->hour = accumulator & MASK_HOUR;
-    accumulator >>= SIZE_HOUR;
-    date->minute = accumulator & MASK_MINUTE;
-    accumulator >>= SIZE_MINUTE;
-    date->second = accumulator & MASK_SECOND;
+    accumulator >>= SIZE_MAGNITUDE;
+    timestamp->time.second = accumulator & MASK_SECOND;
     accumulator >>= SIZE_SECOND;
-    date->nanosecond = accumulator * g_subsec_multipliers[magnitude];
+    timestamp->time.minute = accumulator & MASK_MINUTE;
+    accumulator >>= SIZE_MINUTE;
+    timestamp->time.hour = accumulator & MASK_HOUR;
+    accumulator >>= SIZE_HOUR;
+    timestamp->date.day = accumulator & MASK_DAY;
+    accumulator >>= SIZE_DAY;
+    timestamp->date.month = accumulator & MASK_MONTH;
+    accumulator >>= SIZE_MONTH;
+    timestamp->time.nanosecond = (accumulator & mask_subsecond) * subsecond_multiplier;
+    accumulator >>= size_subsecond;
+    uint32_t year_encoded = (uint32_t)accumulator;
 
-    const int decoded_group_count = rvlq_decode_32(&year_encoded, src + src_index, src_length - src_index);
-    date->year = decode_year(year_encoded);
+    const int decoded_group_count = rvlq_decode_32(&year_encoded, src + offset, src_length - offset);
+    if(decoded_group_count < 1)
+    {
+        return FAILURE_AT_POS(offset) + decoded_group_count;
+    }
+    offset += decoded_group_count;
 
-    return src_index + decoded_group_count;
+    uint32_t timezone_is_utc = year_encoded & 1;
+    year_encoded >>= 1;
+    timestamp->date.year = decode_year(year_encoded);
+
+    int timezone_byte_count = timezone_decode(&timestamp->time.timezone, src + offset, src_length - offset, timezone_is_utc);
+    if(timezone_byte_count < 0)
+    {
+        return FAILURE_AT_POS(offset) + timezone_byte_count;
+    }
+    offset += timezone_byte_count;
+
+    return offset;
 }

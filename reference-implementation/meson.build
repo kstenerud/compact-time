@@ -1,13 +1,13 @@
 project(
-  'cdate',
+  'compact_time',
   'c',
   version : '1.0.0',
   default_options : ['warning_level=3']
 )
-project_description = 'Concise Binary Encoding'
+project_description = 'Compact Time'
 
 project_headers = [
-  'include/cdate/cdate.h',
+  'include/compact_time/compact_time.h',
 ]
 
 project_source_files = [
@@ -22,7 +22,9 @@ project_test_files = [
 cc = meson.get_compiler('c')
 
 project_dependencies = [
-  dependency('vlq', fallback : ['vlq', 'vlq_dep'])
+  dependency('vlq', fallback : ['vlq', 'vlq_dep']),
+  dependency('endianness', fallback : ['endianness', 'endianness_dep']),
+  dependency('kslog', fallback : ['kslog', 'kslog_dep']),
 ]
 
 build_args = [
@@ -45,9 +47,9 @@ build_args += [
 
 # Only make public interfaces visible
 if target_machine.system() == 'windows' or target_machine.system() == 'cygwin'
-  build_args += '-DCDATE_PUBLIC="__declspec(dllexport)"'
+  build_args += '-DCOMPACT_TIME_PUBLIC="__declspec(dllexport)"'
 else
-  build_args += '-DCDATE_PUBLIC=__attribute__((visibility("default")))'
+  build_args += '-DCOMPACT_TIME_PUBLIC=__attribute__((visibility("default")))'
 endif
 
 project_target = shared_library(
