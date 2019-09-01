@@ -11,16 +11,28 @@ TEST(Library, version)
     ASSERT_STREQ(expected, actual);
 }
 
+static void fill_date(ct_date* date, int year, int month, int day)
+{
+    memset(date, 0, sizeof(*date));
+    date->year = year;
+    date->month = month;
+    date->day = day;
+}
+
+static void fill_time(ct_time* time, int hour, int minute, int second, int nanosecond)
+{
+    memset(time, 0, sizeof(*time));
+    time->hour = hour;
+    time->minute = minute;
+    time->second = second;
+    time->nanosecond = nanosecond;
+}
+
 static void fill_timestamp(ct_timestamp* timestamp, int year, int month, int day, int hour, int minute, int second, int nanosecond)
 {
     memset(timestamp, 0, sizeof(*timestamp));
-    timestamp->date.year = year;
-    timestamp->date.month = month;
-    timestamp->date.day = day;
-    timestamp->time.hour = hour;
-    timestamp->time.minute = minute;
-    timestamp->time.second = second;
-    timestamp->time.nanosecond = nanosecond;
+    fill_date(&timestamp->date, year, month, day);
+    fill_time(&timestamp->time, hour, minute, second, nanosecond);
 }
 
 static void fill_timezone_utc(ct_timezone* timezone)
@@ -52,19 +64,61 @@ static void fill_timezone_loc(ct_timezone* timezone, const int latitude, const i
     ASSERT_EQ(EXPECTED.second, ACTUAL.second); \
     ASSERT_EQ(EXPECTED.nanosecond, ACTUAL.nanosecond)
 
-#define ASSERT_TIMESTAMP_ENCODE_DECODE(ACTUAL_TIMESTAMP_NAME, ...) \
+#define ASSERT_TIME_ENCODE_DECODE(EXPECTED_TIME, ACTUAL_TIME, ...) \
     std::vector<uint8_t> expected = __VA_ARGS__; \
-    std::vector<uint8_t> actual(ct_timestamp_encoded_size(&timestamp)); \
-    int bytes_encoded = ct_timestamp_encode(&timestamp, actual.data(), actual.size()); \
+    std::vector<uint8_t> actual(ct_time_encoded_size(&EXPECTED_TIME)); \
+    int bytes_encoded = ct_time_encode(&EXPECTED_TIME, actual.data(), actual.size()); \
     ASSERT_EQ(expected, actual); \
     ASSERT_EQ(bytes_encoded, expected.size()); \
-    KSLOG_ERROR("Expected size = %d", expected.size()); \
-    ct_timestamp ACTUAL_TIMESTAMP_NAME; \
-    memset(&ACTUAL_TIMESTAMP_NAME, 0, sizeof(ACTUAL_TIMESTAMP_NAME)); \
-    int bytes_decoded = ct_timestamp_decode(actual.data(), actual.size(), &ACTUAL_TIMESTAMP_NAME); \
+    ct_time ACTUAL_TIME; \
+    memset(&ACTUAL_TIME, 0, sizeof(ACTUAL_TIME)); \
+    int bytes_decoded = ct_time_decode(actual.data(), actual.size(), &ACTUAL_TIME); \
     ASSERT_EQ(bytes_decoded, expected.size()); \
-    ASSERT_DATE_EQ(ACTUAL_TIMESTAMP_NAME.date, timestamp.date); \
-    ASSERT_TIME_EQ(ACTUAL_TIMESTAMP_NAME.time, timestamp.time)
+    ASSERT_TIME_EQ(ACTUAL_TIME, EXPECTED_TIME)
+
+#define ASSERT_TIMESTAMP_ENCODE_DECODE(EXPECTED_TIMESTAMP, ACTUAL_TIMESTAMP, ...) \
+    std::vector<uint8_t> expected = __VA_ARGS__; \
+    std::vector<uint8_t> actual(ct_timestamp_encoded_size(&EXPECTED_TIMESTAMP)); \
+    int bytes_encoded = ct_timestamp_encode(&EXPECTED_TIMESTAMP, actual.data(), actual.size()); \
+    ASSERT_EQ(expected, actual); \
+    ASSERT_EQ(bytes_encoded, expected.size()); \
+    ct_timestamp ACTUAL_TIMESTAMP; \
+    memset(&ACTUAL_TIMESTAMP, 0, sizeof(ACTUAL_TIMESTAMP)); \
+    int bytes_decoded = ct_timestamp_decode(actual.data(), actual.size(), &ACTUAL_TIMESTAMP); \
+    ASSERT_EQ(bytes_decoded, expected.size()); \
+    ASSERT_DATE_EQ(ACTUAL_TIMESTAMP.date, EXPECTED_TIMESTAMP.date); \
+    ASSERT_TIME_EQ(ACTUAL_TIMESTAMP.time, EXPECTED_TIMESTAMP.time)
+
+
+#define TEST_TIME_TZ_UTC(HOUR, MINUTE, SECOND, NANOSECOND, ...) \
+TEST(CDate, time_utc_ ## HOUR ## _ ## MINUTE ## _ ## SECOND ## _ ## NANOSECOND) \
+{ \
+    ct_time time; \
+    fill_time(&time, HOUR, MINUTE, SECOND, NANOSECOND); \
+    fill_timezone_utc(&time.timezone); \
+    ASSERT_TIME_ENCODE_DECODE(time, actual_time, __VA_ARGS__); \
+}
+
+#define TEST_TIME_TZ_NAMED(HOUR, MINUTE, SECOND, NANOSECOND, TZ, ...) \
+TEST(CDate, time_named_ ## HOUR ## _ ## MINUTE ## _ ## SECOND ## _ ## NANOSECOND) \
+{ \
+    ct_time time; \
+    fill_time(&time, HOUR, MINUTE, SECOND, NANOSECOND); \
+    fill_timezone_named(&time.timezone, TZ); \
+    ASSERT_TIME_ENCODE_DECODE(time, actual_time, __VA_ARGS__); \
+    ASSERT_STREQ(actual_time.timezone.data.as_string, TZ); \
+}
+
+#define TEST_TIME_TZ_LOC(HOUR, MINUTE, SECOND, NANOSECOND, LAT, LONG, ...) \
+TEST(CDate, time_loc_ ## HOUR ## _ ## MINUTE ## _ ## SECOND ## _ ## NANOSECOND) \
+{ \
+    ct_time time; \
+    fill_time(&time, HOUR, MINUTE, SECOND, NANOSECOND); \
+    fill_timezone_loc(&time.timezone, LAT, LONG); \
+    ASSERT_TIME_ENCODE_DECODE(time, actual_time, __VA_ARGS__); \
+    ASSERT_EQ(time.timezone.data.as_location.latitude, LAT); \
+    ASSERT_EQ(time.timezone.data.as_location.longitude, LONG); \
+}
 
 #define TEST_TIMESTAMP_TZ_UTC(SIGN, YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, NANOSECOND, ...) \
 TEST(CDate, timestamp_utc_ ## YEAR ## _ ## MONTH ## _ ## DAY ## _ ## HOUR ## _ ## MINUTE ## _ ## SECOND ## _ ## NANOSECOND) \
@@ -72,7 +126,7 @@ TEST(CDate, timestamp_utc_ ## YEAR ## _ ## MONTH ## _ ## DAY ## _ ## HOUR ## _ #
     ct_timestamp timestamp; \
     fill_timestamp(&timestamp, SIGN YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, NANOSECOND); \
     fill_timezone_utc(&timestamp.time.timezone); \
-    ASSERT_TIMESTAMP_ENCODE_DECODE(actual_timestamp, __VA_ARGS__); \
+    ASSERT_TIMESTAMP_ENCODE_DECODE(timestamp, actual_timestamp, __VA_ARGS__); \
 }
 
 #define TEST_TIMESTAMP_TZ_NAMED(SIGN, YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, NANOSECOND, TZ, ...) \
@@ -81,7 +135,7 @@ TEST(CDate, timestamp_named_ ## YEAR ## _ ## MONTH ## _ ## DAY ## _ ## HOUR ## _
     ct_timestamp timestamp; \
     fill_timestamp(&timestamp, SIGN YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, NANOSECOND); \
     fill_timezone_named(&timestamp.time.timezone, TZ); \
-    ASSERT_TIMESTAMP_ENCODE_DECODE(actual_timestamp, __VA_ARGS__); \
+    ASSERT_TIMESTAMP_ENCODE_DECODE(timestamp, actual_timestamp, __VA_ARGS__); \
     ASSERT_STREQ(actual_timestamp.time.timezone.data.as_string, TZ); \
 }
 
@@ -91,15 +145,27 @@ TEST(CDate, timestamp_loc_ ## YEAR ## _ ## MONTH ## _ ## DAY ## _ ## HOUR ## _ #
     ct_timestamp timestamp; \
     fill_timestamp(&timestamp, SIGN YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, NANOSECOND); \
     fill_timezone_loc(&timestamp.time.timezone, LAT, LONG); \
-    ASSERT_TIMESTAMP_ENCODE_DECODE(actual_timestamp, __VA_ARGS__); \
+    ASSERT_TIMESTAMP_ENCODE_DECODE(timestamp, actual_timestamp, __VA_ARGS__); \
     ASSERT_EQ(timestamp.time.timezone.data.as_location.latitude, LAT); \
     ASSERT_EQ(timestamp.time.timezone.data.as_location.longitude, LONG); \
 }
 
 
-// ----------
-// Timestamps
-// ----------
+// ----
+// Time
+// ----
+
+TEST_TIME_TZ_UTC(8, 41, 05, 999999999, {0x47, 0x69, 0xf1, 0x9f, 0xac, 0xb9, 0x03})
+TEST_TIME_TZ_UTC(14, 18, 30, 43000000, {0x73, 0x92, 0xb7, 0x02})
+TEST_TIME_TZ_UTC(23, 6, 55, 8000, {0xbd, 0xc6, 0x8d, 0x00, 0x00})
+TEST_TIME_TZ_NAMED(10, 10, 10, 0, "s/tokyo", {0x50, 0x8a, 0x02, 0x0e, 's','/','t','o','k','y','o'})
+TEST_TIME_TZ_LOC(7, 45, 0, 1000000, 3876, -2730, {0x3a, 0x2d, 0x10, 0x00, 0x49, 0x1e, 0xab, 0x3a})
+
+
+
+// ---------
+// Timestamp
+// ---------
 
 TEST_TIMESTAMP_TZ_NAMED( , 2000,1,1,0,0,0,0, "Europe/Berlin", {0x00, 0x00, 0x08, 0x01, 00, 0x1a, 'E','u','r','o','p','e','/','B','e','r','l','i','n'})
 TEST_TIMESTAMP_TZ_LOC( , 2000,1,1,1,0,0,0,100,200, {0x00, 0x40, 0x08, 0x01, 0x00, 0xc9, 0x00, 0x64, 0x00})

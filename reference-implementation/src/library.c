@@ -27,9 +27,9 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-// #define KSLog_FileDesriptor STDOUT_FILENO
-// #define KSLog_LocalMinLevel KSLOG_LEVEL_TRACE
-// #include <kslog/kslog.h>
+#define KSLog_FileDesriptor STDOUT_FILENO
+#define KSLog_LocalMinLevel KSLOG_LEVEL_TRACE
+#include <kslog/kslog.h>
 
 #include "compact_time/compact_time.h"
 #include <endianness/endianness.h>
@@ -53,11 +53,11 @@ static const int BITS_PER_YEAR_GROUP = 7;
 #define SIZE_DAY       5
 #define SIZE_MONTH     4
 
-#define SIZE_LATITUDE  15
-#define SIZE_LONGITUDE 14
+#define SIZE_LATITUDE  14
+#define SIZE_LONGITUDE 15
 
 
-// static const int BASE_SIZE_TIME = SIZE_UTC + SIZE_MAGNITUDE + SIZE_SECOND + SIZE_MINUTE + SIZE_HOUR;
+static const int BASE_SIZE_TIME = SIZE_UTC + SIZE_MAGNITUDE + SIZE_SECOND + SIZE_MINUTE + SIZE_HOUR;
 static const int BASE_SIZE_TIMESTAMP = SIZE_MAGNITUDE + SIZE_SECOND + SIZE_MINUTE + SIZE_HOUR + SIZE_DAY + SIZE_MONTH;
 
 static const unsigned MASK_MAGNITUDE = ((1<<SIZE_MAGNITUDE)-1);
@@ -70,8 +70,7 @@ static const unsigned MASK_MONTH     = ((1<<SIZE_MONTH)-1);
 static const unsigned MASK_LATITUDE  = ((1<<SIZE_LATITUDE)-1);
 static const unsigned MASK_LONGITUDE = ((1<<SIZE_LONGITUDE)-1);
 
-static const int g_base_timestamp_sizes[] = { 4, 5, 6, 8 };
-static const int g_year_high_bits[] = { 4, 2, 0, 6 };
+static const uint8_t g_year_high_bits[] = { 4, 2, 0, 6 };
 static const unsigned g_subsec_multipliers[] = { 1, 1000000, 1000, 1 };
 
 
@@ -177,10 +176,15 @@ static int timezone_encode(const ct_timezone* timezone, uint8_t* dst, int dst_le
         }
         case CT_TZ_LATLONG:
         {
-            uint32_t value =
-                (timezone->data.as_location.longitude << SIZE_LATITUDE) |
-                (timezone->data.as_location.latitude << 1) |
-                1;
+            uint32_t value = timezone->data.as_location.longitude & MASK_LONGITUDE;
+            value <<= SIZE_LATITUDE;
+            value |= timezone->data.as_location.latitude & MASK_LATITUDE;
+            value <<= 1;
+            value |= 1;
+            KSLOG_TRACE("lat %d, long %d, latlong = %08x",
+                timezone->data.as_location.latitude,
+                timezone->data.as_location.longitude,
+                value);
             int length = sizeof(value);
             if(length > dst_length)
             {
@@ -232,7 +236,7 @@ static int timezone_decode(ct_timezone* timezone, const uint8_t* src, int src_le
     }
     timezone->type = CT_TZ_STRING;
     memcpy(timezone->data.as_string, src+offset, length);
-    timezone->data.as_string[offset + length] = 0;
+    timezone->data.as_string[length] = 0;
     offset += length;
     return offset;
 }
@@ -248,6 +252,14 @@ const char* ct_version()
     return EXPAND_AND_QUOTE(PROJECT_VERSION);
 }
 
+int ct_time_encoded_size(const ct_time* time)
+{
+    const int magnitude = get_subsecond_magnitude(time->nanosecond);
+    const int base_byte_count = get_base_byte_count(BASE_SIZE_TIME, magnitude);
+
+    return base_byte_count + timezone_encoded_size(&time->timezone);
+}
+
 int ct_timestamp_encoded_size(const ct_timestamp* timestamp)
 {
     const int magnitude = get_subsecond_magnitude(timestamp->time.nanosecond);
@@ -256,6 +268,39 @@ int ct_timestamp_encoded_size(const ct_timestamp* timestamp)
     const int year_group_count = get_year_group_count(encoded_year<<1, g_year_high_bits[magnitude]);
 
     return base_byte_count + year_group_count + timezone_encoded_size(&timestamp->time.timezone);
+}
+
+int ct_time_encode(const ct_time* time, uint8_t* dst, int dst_length)
+{
+    KSLOG_ERROR("Lat %x long %x", 3876&0x3fff, (-2730)&0x7fff);
+    const int magnitude = get_subsecond_magnitude(time->nanosecond);
+    const uint64_t subsecond = time->nanosecond / g_subsec_multipliers[magnitude];
+
+    uint64_t accumulator = subsecond;
+    accumulator = (accumulator << SIZE_SECOND) + time->second;
+    accumulator = (accumulator << SIZE_MINUTE) + time->minute;
+    accumulator = (accumulator << SIZE_HOUR) + time->hour;
+    accumulator = (accumulator << SIZE_MAGNITUDE) + magnitude;
+    accumulator = (accumulator << 1) + (time->timezone.type == CT_TZ_ZERO ? 1 : 0);
+
+    int offset = 0;
+    const int accumulator_size = get_base_byte_count(BASE_SIZE_TIME, magnitude);
+    KSLOG_TRACE("Accum (%d): %08lx", accumulator_size, accumulator);
+    if(accumulator_size > dst_length)
+    {
+        return FAILURE_AT_POS(accumulator_size);
+    }
+    copy_le(&accumulator, dst + offset, accumulator_size);
+    offset += accumulator_size;
+
+    const int timezone_byte_count = timezone_encode(&time->timezone, dst+offset, dst_length-offset);
+    if(timezone_byte_count < 0)
+    {
+        return FAILURE_AT_POS(offset) + timezone_byte_count;
+    }
+    offset += timezone_byte_count;
+
+    return offset;
 }
 
 int ct_timestamp_encode(const ct_timestamp* timestamp, uint8_t* dst, int dst_length)
@@ -277,7 +322,7 @@ int ct_timestamp_encode(const ct_timestamp* timestamp, uint8_t* dst, int dst_len
     accumulator = (accumulator << SIZE_MAGNITUDE) + magnitude;
 
     int offset = 0;
-    const int accumulator_size = g_base_timestamp_sizes[magnitude];
+    const int accumulator_size = get_base_byte_count(BASE_SIZE_TIMESTAMP, magnitude);
     if(accumulator_size > dst_length)
     {
         return FAILURE_AT_POS(accumulator_size);
@@ -301,6 +346,50 @@ int ct_timestamp_encode(const ct_timestamp* timestamp, uint8_t* dst, int dst_len
     return offset;
 }
 
+int ct_time_decode(const uint8_t* src, int src_length, ct_time* time)
+{
+    if(src_length < 1)
+    {
+        return FAILURE_AT_POS(1);
+    }
+
+    const bool timezone_is_utc = src[0] & 1;
+    const int magnitude = (src[0] >> 1) & MASK_MAGNITUDE;
+    const int subsecond_multiplier = g_subsec_multipliers[magnitude];
+    const int size_subsecond = SIZE_SUBSECOND * magnitude;
+    const unsigned mask_subsecond = (1 << size_subsecond) - 1;
+
+    int offset = get_base_byte_count(BASE_SIZE_TIME, magnitude);
+    if(offset > src_length)
+    {
+        KSLOG_TRACE("Fail 1");
+        return FAILURE_AT_POS(offset);
+    }
+
+    uint64_t accumulator = 0;
+    copy_le(src, &accumulator, offset);
+
+    accumulator >>= 1;
+    accumulator >>= SIZE_MAGNITUDE;
+    time->hour = accumulator & MASK_HOUR;
+    accumulator >>= SIZE_HOUR;
+    time->minute = accumulator & MASK_MINUTE;
+    accumulator >>= SIZE_MINUTE;
+    time->second = accumulator & MASK_SECOND;
+    accumulator >>= SIZE_SECOND;
+    time->nanosecond = (accumulator & mask_subsecond) * subsecond_multiplier;
+
+    int timezone_byte_count = timezone_decode(&time->timezone, src + offset, src_length - offset, timezone_is_utc);
+    if(timezone_byte_count < 0)
+    {
+        KSLOG_TRACE("Fail 2");
+        return FAILURE_AT_POS(offset) + timezone_byte_count;
+    }
+    offset += timezone_byte_count;
+
+    return offset;
+}
+
 int ct_timestamp_decode(const uint8_t* src, int src_length, ct_timestamp* timestamp)
 {
     if(src_length < 1)
@@ -313,7 +402,7 @@ int ct_timestamp_decode(const uint8_t* src, int src_length, ct_timestamp* timest
     const int size_subsecond = SIZE_SUBSECOND * magnitude;
     const unsigned mask_subsecond = (1 << size_subsecond) - 1;
 
-    int offset = g_base_timestamp_sizes[magnitude];
+    int offset = get_base_byte_count(BASE_SIZE_TIMESTAMP, magnitude);
     if(offset >= src_length)
     {
         return FAILURE_AT_POS(offset);
