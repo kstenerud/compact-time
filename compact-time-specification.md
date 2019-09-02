@@ -3,7 +3,7 @@ Compact Time Format
 
 The compact time formats are encoding schemes to store a complete time, date, or timestamp in as few bytes as possible for data transmission.
 
-Any Gregorian or proleptic Gregorian date can be recorded to the nanosecond using this encoding.
+Any Gregorian or proleptic Gregorian date, time, or timestamp can be recorded down to the nanosecond using this encoding.
 
 
 
@@ -18,7 +18,30 @@ Features
  * Supports leap years and leap seconds.
  * Maintenance-free (no leap second tables to update).
  * Efficient conversion to/from human readable fields (no multiplication or division).
- * Time zones are location-based, not offset-based.
+ * Time zones are location-based.
+
+
+
+Contents
+--------
+
+* [Compact Date](#compact-date)
+* [Compact Time](#compact-time)
+* [Compact Timestamp](#compact-timestamp)
+* [Sub-second Magnitude](#sub-second-magnitude)
+* [Time Zone](#time-zone)
+  - [Latitude-longitude](#latitude-longitude)
+  - [Area-Location](#area-location)
+    - [Abbreviated Areas](#abbreviated-areas)
+    - [Special Areas](#special-areas)
+  - [Comparison of Forms](#comparison-of-forms)
+* [Year Encoding](#year-encoding)
+* [Zigzag Integer](#zigzag-integer)
+* [Proleptic Gregorian Calendar](#proleptic-gregorian-calendar)
+* [Invalid Encoding](#invalid-encoding)
+* [Examples](#examples)
+* [How to Keep Time](#wow-to-keep-time)
+* [License](#license)
 
 
 
@@ -148,7 +171,7 @@ Time Zone
 A time zone can take one of two forms: `latitude-longitude`, or `area-location`.
 
 
-### Latitude-longitude
+### Latitude-Longitude
 
 The latitude and longitude values are encoded into a 32-bit structure, stored in little endian byte order:
 
@@ -164,16 +187,6 @@ Latitude and longitude are stored as two's complement signed integers representi
 The location, combined with an associated date, refers to the time zone that location falls under on that particular date. Location data should ideally be within the boundaries of a politically notable region whenever possible.
 
 Note: Time zone values that contain different longitude/latitude values, but still refer to the same time zone at their particular time (for example, [48.85, 2.32] on Dec 10, 2010, and [48.90, 2.28] on Jan 1, 2000, which both refer to Europe/Paris in the same daylight savings mode), are considered equal.
-
-Pros:
-
-- Smaller size
-- Impervious to the effects of changing names or boundaries over time
-
-Cons:
-
-- More difficult for humans to decode.
-- More complex decoding procedure.
 
 
 ### Area-Location
@@ -192,6 +205,7 @@ Followed by:
 | String               |    * |   * |   * | [IANA time zone identifier](https://www.iana.org/time-zones) |
 
 All string comparisons are case insensitive when comparing area-location timezone data.
+
 
 #### Abbreviated Areas
 
@@ -219,6 +233,22 @@ The following special values may also be used. They do not contain a location co
 | ------- | ------------ | ------------------ |
 | `Zero`  | `Z`          | Alias to `Etc/UTC` |
 | `Local` | `L`          | "Local" time zone, meaning that the accompanying time value is to be interpreted as if in the time zone of the observer. |
+
+
+### Comparison of Forms
+
+There are benefits and drawbacks to consider when choosing which form to use for time zones.
+
+#### Latitude-Longitude
+
+  - Smaller size.
+  - Impervious to the effects of changing names or boundaries over time.
+
+#### Area-Location
+
+  - More widely implemented.
+  - Less complex decoding procedure.
+  - Humans decodable without a database.
 
 
 
@@ -264,7 +294,7 @@ Dates prior to the introduction of the Gregorian Calendar in 1582 must be stored
 Invalid Encoding
 ----------------
 
-If any field contains values outside of its allowed range, the entire time/date/timstamp is invalid.
+If any field contains values outside of its allowed range, the entire time/date/timestamp is invalid.
 
 RESERVED fields must contain all zero bits. If a RESERVED field contains any `1` bits, the time/date/timestamp is invalid.
 
@@ -318,7 +348,7 @@ Encoded value:
 
 ### Example 2:
 
-    January 7, 5000, Europe/Paris
+    January 7, 5000
 
 
 Year is calculated as `2000` + `3000`, encoded as zigzag: `0x1770`.
@@ -410,6 +440,40 @@ Time Zone:
     Time Zone: 0x0e [65 2f 70 61 72 69 73]
 
     Encoded: [06 f6 bb ed de 77 01 0e 65 2f 70 61 72 69 73]
+
+
+
+How to Keep Time
+----------------
+
+Time is one of the most difficult data types to get right. Aside from issues of synchronization, leap seconds, data container limitations and such, it's important to choose the correct **kind** of time to store, and the right kind depends on what the purpose of recording the time is.
+
+There are three main kinds of time:
+
+#### Absolute Time
+
+Absolute time is a time that does not depend on a time zone. It does not honor daylight savings time, nor will it ever change if an area's time zone changes for political reasons. Absolute time is best recorded in the UTC time zone, and is mostly useful for events in the past (because the time zone is now fixed at the time of the event, so it no longer matters what specific time zone was in effect).
+
+#### Fixed Time
+
+Fixed time is a time that is fixed to a particular place, and that place has a time zone associated with it (but the time zone may change for political reasons in the future). If the venue changes, only the time zone data needs to be updated. An example would be an appointment in London this coming October 12th at 10:30.
+
+#### Floating Time
+
+Floating (or local) time is always relative to the time zone of the observer. If you travel and change time zones, floating time changes zones with you. If someone else looks at a floating time, it will have a different absolute value from yours if you happen to be in different time zones. An example would be an 8:00 morning workout.
+
+
+### When to Use Each Kind
+
+Use whichever kind of time most succinctly and completely handles your time needs. Don't depend on time zone information as a proxy for a location; that's depending on a side effect, which is always brittle. Store location information separately if it's important.
+
+| Situation           | Kind                                            |
+| ------------------- | ----------------------------------------------- |
+| Recording an event  | Absolute                                        |
+| Log entries         | Absolute                                        |
+| An appointment      | Fixed                                           |
+| Your daily schedule | Floating                                        |
+| Deadlines           | Usually fixed time, but possibly absolute time. |
 
 
 

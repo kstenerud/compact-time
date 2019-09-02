@@ -64,6 +64,18 @@ static void fill_timezone_loc(ct_timezone* timezone, const int latitude, const i
     ASSERT_EQ(EXPECTED.second, ACTUAL.second); \
     ASSERT_EQ(EXPECTED.nanosecond, ACTUAL.nanosecond)
 
+#define ASSERT_DATE_ENCODE_DECODE(EXPECTED_DATE, ACTUAL_DATE, ...) \
+    std::vector<uint8_t> expected = __VA_ARGS__; \
+    std::vector<uint8_t> actual(ct_date_encoded_size(&EXPECTED_DATE)); \
+    int bytes_encoded = ct_date_encode(&EXPECTED_DATE, actual.data(), actual.size()); \
+    ASSERT_EQ(expected, actual); \
+    ASSERT_EQ(bytes_encoded, expected.size()); \
+    ct_date ACTUAL_DATE; \
+    memset(&ACTUAL_DATE, 0, sizeof(ACTUAL_DATE)); \
+    int bytes_decoded = ct_date_decode(actual.data(), actual.size(), &ACTUAL_DATE); \
+    ASSERT_EQ(bytes_decoded, expected.size()); \
+    ASSERT_DATE_EQ(ACTUAL_DATE, EXPECTED_DATE)
+
 #define ASSERT_TIME_ENCODE_DECODE(EXPECTED_TIME, ACTUAL_TIME, ...) \
     std::vector<uint8_t> expected = __VA_ARGS__; \
     std::vector<uint8_t> actual(ct_time_encoded_size(&EXPECTED_TIME)); \
@@ -89,6 +101,14 @@ static void fill_timezone_loc(ct_timezone* timezone, const int latitude, const i
     ASSERT_DATE_EQ(ACTUAL_TIMESTAMP.date, EXPECTED_TIMESTAMP.date); \
     ASSERT_TIME_EQ(ACTUAL_TIMESTAMP.time, EXPECTED_TIMESTAMP.time)
 
+
+#define TEST_DATE(SIGN, YEAR, MONTH, DAY, ...) \
+TEST(CDate, timestamp_utc_ ## YEAR ## _ ## MONTH ## _ ## DAY) \
+{ \
+    ct_date date; \
+    fill_date(&date, SIGN YEAR, MONTH, DAY); \
+    ASSERT_DATE_ENCODE_DECODE(date, actual_date, __VA_ARGS__); \
+}
 
 #define TEST_TIME_TZ_UTC(HOUR, MINUTE, SECOND, NANOSECOND, ...) \
 TEST(CDate, time_utc_ ## HOUR ## _ ## MINUTE ## _ ## SECOND ## _ ## NANOSECOND) \
@@ -150,6 +170,13 @@ TEST(CDate, timestamp_loc_ ## YEAR ## _ ## MONTH ## _ ## DAY ## _ ## HOUR ## _ #
     ASSERT_EQ(timestamp.time.timezone.data.as_location.longitude, LONG); \
 }
 
+
+// ----
+// Date
+// ----
+
+TEST_DATE( , 2000,1,1, {0x80, 0x08, 0x00})
+TEST_DATE(-, 2000,12,21, {0x3e, 0xae, 0x3f})
 
 // ----
 // Time

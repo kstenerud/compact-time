@@ -3,7 +3,7 @@ Compact Time Format
 
 The compact time formats are encoding schemes to store a complete time, date, or timestamp in as few bytes as possible for data transmission.
 
-Any Gregorian or proleptic Gregorian date can be recorded to the nanosecond using this encoding.
+Any Gregorian or proleptic Gregorian date, time, or timestamp can be recorded down to the nanosecond using this encoding.
 
 
 
@@ -18,7 +18,7 @@ Features
  * Supports leap years and leap seconds.
  * Maintenance-free (no leap second tables to update).
  * Efficient conversion to/from human readable fields (no multiplication or division).
- * Time zones are location-based, not offset-based.
+ * Time zones are location-based.
 
 
 
