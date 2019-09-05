@@ -50,10 +50,10 @@ Compact Date
 
 The compact date structure is composed of the following components:
 
-| Component      | Optional? |
-| -------------- | --------- |
-| Base structure |     N     |
-| RVLQ Extension |     N     |
+| Component      | Required |
+| -------------- | -------- |
+| Base structure |     Y    |
+| RVLQ Extension |     Y    |
 
 
 ### Base Structure
@@ -84,10 +84,10 @@ Compact Time
 
 The compact time structure is composed of the following components:
 
-| Component      | Optional? |
-| -------------- | --------- |
-| Base structure |     N     |
-| Time Zone      |     Y     |
+| Component      | Required |
+| -------------- | -------- |
+| Base structure |     Y    |
+| Time Zone      |     N    |
 
 
 ### Base Structure
@@ -102,7 +102,7 @@ The base structure is from 3 to 7 bytes wide (depending on the [`sub-second magn
 | Minute               |    6 |   0 |        59 |                                                      |
 | Hour                 |    5 |   0 |        23 |                                                      |
 | Sub-second Magnitude |    2 |   0 |         3 | Determines [sub-second width](#sub-second-magnitude) |
-| Time Zone is UTC     |    1 |   0 |         1 | If 1, no other time zone data follows                |
+| Time Zone is UTC     |    1 |   0 |         1 | If 1, no time zone structure follows                 |
 
 If the `time zone is utc` flag is 0, the base structure is followed by a [time zone](#time-zone).
 
@@ -113,11 +113,11 @@ Compact Timestamp
 
 The compact timestamp structure is composed of the following components:
 
-| Component      | Optional? |
-| -------------- | --------- |
-| Base structure |     N     |
-| RVLQ Extension |     N     |
-| Time Zone      |     Y     |
+| Component      | Required |
+| -------------- | -------- |
+| Base structure |     Y    |
+| RVLQ Extension |     Y    |
+| Time Zone      |     N    |
 
 
 ### Base Structure
@@ -145,7 +145,7 @@ The RVLQ extension contains the lower bits of the `year` field, as well as the `
 | Field                | Bits | Min | Max | Notes                                   |
 | -------------------- | ---- | --- | --- | --------------------------------------- |
 | Year (lower bits)    |  6-* |   * |   * | See: [year encoding](#year-encoding)    |
-| Time Zone is UTC     |    1 |   0 |   1 | If 1, no further time zone data follows |
+| Time Zone is UTC     |    1 |   0 |   1 | If 1, no time zone structure follows    |
 
 If the `time zone is utc` flag is 0, the RVLQ extension is followed by a [time zone](#time-zone).
 
@@ -184,7 +184,7 @@ The latitude and longitude values are encoded into a 32-bit structure, stored in
 
 Latitude and longitude are stored as two's complement signed integers representing hundredths of degrees. This gives a resolution of roughly 1 kilometer at the equator, which is enough to uniquely locate a time zone.
 
-The location, combined with an associated date, refers to the time zone that location falls under on that particular date. Location data should ideally be within the boundaries of a politically notable region whenever possible.
+The location, combined with an associated date, refers to the time zone that the location falls under on that particular date. Location data should ideally be within the boundaries of a politically notable region whenever possible.
 
 Note: Time zone values that contain different longitude/latitude values, but still refer to the same time zone at their particular time (for example, [48.85, 2.32] on Dec 10, 2010, and [48.90, 2.28] on Jan 1, 2000, which both refer to Europe/Paris in the same daylight savings mode), are considered equal.
 
@@ -248,7 +248,7 @@ There are benefits and drawbacks to consider when choosing which form to use for
 
   - More widely implemented.
   - Less complex decoding procedure.
-  - Humans decodable without a database.
+  - Human decodable without a database.
 
 
 
@@ -309,7 +309,7 @@ Examples
 
 Year is calculated as `2000` + `19 (0x13)`, encoded as zigzag: `0x26`.
 
-The sub-second portion of this date goes to the millisecond, which requires a magnitude field of 1. Magnitude 1 implies a base structure of 40 bits, containing 2 high bits of year data.
+The sub-second portion of this date goes to the millisecond, which requires a magnitude field of 1. Magnitude 1 implies a base structure of 40 bits, containing 2 high bits of year data to bring the structure to a multiple of 8 bits.
 
 Base structure (40 bits):
 
@@ -388,7 +388,7 @@ Encoded value:
 
     00:54:47.394129115, Europe/Paris
 
-The sub-second portion of this date goes to the nanosecond, which requires a magnitude field of 3. Magnitude 3 implies a base structure of 56 bits, containing 6 unused bits.
+The sub-second portion of this date goes to the nanosecond, which requires a magnitude field of 3. Magnitude 3 implies a base structure of 56 bits, containing 6 RESERVED bits.
 
 Base structure (56 bits):
 
@@ -452,7 +452,7 @@ There are three main kinds of time:
 
 #### Absolute Time
 
-Absolute time is a time that does not depend on a time zone. It does not honor daylight savings time, nor will it ever change if an area's time zone changes for political reasons. Absolute time is best recorded in the UTC time zone, and is mostly useful for events in the past (because the time zone is now fixed at the time of the event, so it no longer matters what specific time zone was in effect).
+Absolute time is a time that is fixed relative to UTC (or relative to an offset from UTC). It is not affected by daylight savings time, nor will it ever change if an area's time zone changes for political reasons. Absolute time is best recorded in the UTC time zone, and is mostly useful for events in the past (because the time zone is now fixed at the time of the event, so it no longer matters what specific time zone was in effect).
 
 #### Fixed Time
 
