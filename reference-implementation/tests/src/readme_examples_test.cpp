@@ -67,7 +67,7 @@ static void demonstrate_decode_time()
     switch(time.timezone.type)
     {
         case CT_TZ_ZERO:
-            printf("UTC\n");
+            printf("Etc/UTC\n");
             break;
         case CT_TZ_STRING:
             printf("%s\n", time.timezone.data.as_string);
@@ -80,7 +80,7 @@ static void demonstrate_decode_time()
             break;
     }
 
-    // Outputs: 00:36:15.980050000 UTC
+    // Outputs: 00:36:15.980050000 Etc/UTC
 }
 
 static void demonstrate_encode_timestamp()
@@ -104,7 +104,7 @@ static void demonstrate_encode_timestamp()
 
 static void demonstrate_decode_timestamp()
 {
-    std::vector<uint8_t> data = {0x78, 0x13, 0x3a, 0x01, 0x78, 0x16, 0x6d, 0x2f, 0x76, 0x61, 0x6e, 0x63, 0x6f, 0x75, 0x76, 0x65, 0x72};
+    std::vector<uint8_t> data = {0x78, 0x13, 0x3a, 0x01, 0x78, 0x16, 0x4d, 0x2f, 0x56, 0x61, 0x6e, 0x63, 0x6f, 0x75, 0x76, 0x65, 0x72};
     ct_timestamp timestamp;
     ct_timestamp_decode(data.data(), data.size(), &timestamp);
     printf("%04d-%02d-%02d %02d:%02d:%02d.%d ",
@@ -118,7 +118,7 @@ static void demonstrate_decode_timestamp()
     switch(timestamp.time.timezone.type)
     {
         case CT_TZ_ZERO:
-            printf("UTC\n");
+            printf("Etc/UTC\n");
             break;
         case CT_TZ_STRING:
             printf("%s\n", timestamp.time.timezone.data.as_string);
@@ -131,7 +131,7 @@ static void demonstrate_decode_timestamp()
             break;
     }
 
-    // Outputs: 2030-01-07 08:19:30.0 m/vancouver
+    // Outputs: 2030-01-07 08:19:30.0 M/Vancouver
 }
 
 

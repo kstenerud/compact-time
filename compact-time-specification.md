@@ -204,8 +204,6 @@ Followed by:
 | -------------------- | ---- | --- | --- | --------------------------------- |
 | String               |    * |   * |   * | [IANA time zone identifier](https://www.iana.org/time-zones) |
 
-All string comparisons are case insensitive when comparing area-location timezone data.
-
 
 #### Abbreviated Areas
 
@@ -435,11 +433,11 @@ Time Zone:
 | --------------- | ----- | --------- | ------------------------ |
 | Length          |     7 |         7 |                `0000111` |
 | lat-long form   |     1 |         0 |                `      0` |
-| string contents |    56 | "e/paris" | `[65 2f 70 61 72 69 73]` |
+| string contents |    56 | "E/Paris" | `[45 2f 50 61 72 69 73]` |
 
-    Time Zone: 0x0e [65 2f 70 61 72 69 73]
+    Time Zone: 0x0e [45 2f 50 61 72 69 73]
 
-    Encoded: [06 f6 bb ed de 77 01 0e 65 2f 70 61 72 69 73]
+    Encoded: [06 f6 bb ed de 77 01 0e 45 2f 50 61 72 69 73]
 
 
 
