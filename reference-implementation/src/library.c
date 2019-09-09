@@ -364,6 +364,7 @@ int ct_timestamp_encode(const ct_timestamp* timestamp, uint8_t* dst, int dst_len
     }
     copy_le(&accumulator, dst + offset, accumulator_size);
     offset += accumulator_size;
+
     const int rvlq_byte_count = rvlq_encode_32(encoded_year & year_grouped_mask, dst+offset, dst_length - offset);
     if(rvlq_byte_count <= 0)
     {
