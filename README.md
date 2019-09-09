@@ -35,7 +35,7 @@ Implementations
 ---------------
 
 * [C implementation](reference-implementation)
-* [Go implementation](https://github.com/kstenerud/go-compact-date)
+* [Go implementation](https://github.com/kstenerud/go-compact-time)
 
 
 

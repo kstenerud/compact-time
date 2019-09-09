@@ -1,5 +1,5 @@
 /*
- * Compact Date
+ * Compact Time
  * ============
  *
  *
