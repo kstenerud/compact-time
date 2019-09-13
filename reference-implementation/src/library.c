@@ -27,8 +27,8 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-#define KSLog_FileDesriptor STDOUT_FILENO
-#define KSLog_LocalMinLevel KSLOG_LEVEL_TRACE
+// #define KSLog_FileDesriptor STDOUT_FILENO
+// #define KSLog_LocalMinLevel KSLOG_LEVEL_TRACE
 #include <kslog/kslog.h>
 
 #include "compact_time/compact_time.h"
