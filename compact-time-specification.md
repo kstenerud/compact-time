@@ -64,9 +64,9 @@ The [`year` field](#year-encoding) is split across the `base structure` (upper b
 
 | Field                | Bits | Min | Max | Notes                                |
 | -------------------- | ---- | --- | --- | ------------------------------------ |
-| Day                  |    5 |   1 |  31 |                                      |
-| Month                |    4 |   1 |  12 |                                      |
 | Year (upper bits)    |    7 |   * |   * | See: [year encoding](#year-encoding) |
+| Month                |    4 |   1 |  12 |                                      |
+| Day                  |    5 |   1 |  31 |                                      |
 
 
 ### RVLQ Extension

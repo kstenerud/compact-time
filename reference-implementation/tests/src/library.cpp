@@ -103,7 +103,7 @@ static void fill_timezone_loc(ct_timezone* timezone, const int latitude, const i
 
 
 #define TEST_DATE(SIGN, YEAR, MONTH, DAY, ...) \
-TEST(CDate, timestamp_utc_ ## YEAR ## _ ## MONTH ## _ ## DAY) \
+TEST(CDate, date_utc_ ## YEAR ## _ ## MONTH ## _ ## DAY) \
 { \
     ct_date date; \
     fill_date(&date, SIGN YEAR, MONTH, DAY); \
@@ -175,8 +175,10 @@ TEST(CDate, timestamp_loc_ ## YEAR ## _ ## MONTH ## _ ## DAY ## _ ## HOUR ## _ #
 // Date
 // ----
 
-TEST_DATE( , 2000,1,1, {0x80, 0x08, 0x00})
-TEST_DATE(-, 2000,12,21, {0x3e, 0xae, 0x3f})
+TEST_DATE( , 2000,1,1, {0x21, 0x00, 0x00})
+TEST_DATE(-, 2000,12,21, {0x95, 0x7d, 0x3f})
+
+
 
 // ----
 // Time

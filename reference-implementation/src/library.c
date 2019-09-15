@@ -285,9 +285,9 @@ int ct_date_encode(const ct_date* date, uint8_t* dst, int dst_length)
     const int year_group_bit_count = year_group_count * BITS_PER_YEAR_GROUP;
     const unsigned year_grouped_mask = (1<<year_group_bit_count) - 1;
 
-    uint16_t accumulator = date->day;
-    accumulator = (accumulator << SIZE_MONTH) + date->month;
-    accumulator = (accumulator << SIZE_DATE_YEAR_UPPER_BITS) + (encoded_year >> year_group_bit_count);
+    uint16_t accumulator = encoded_year >> year_group_bit_count;
+    accumulator = (accumulator << SIZE_MONTH) | date->month;
+    accumulator = (accumulator << SIZE_DAY) | date->day;
 
     int offset = 0;
     const int accumulator_size = BYTE_COUNT_DATE;
@@ -392,11 +392,11 @@ int ct_date_decode(const uint8_t* src, int src_length, ct_date* date)
     uint16_t accumulator = read_uint16_le(src);
     int offset = BYTE_COUNT_DATE;
 
-    uint32_t year_encoded = accumulator & MASK_DATE_YEAR_UPPER_BITS;
-    accumulator >>= SIZE_DATE_YEAR_UPPER_BITS;
+    date->day = accumulator & MASK_DAY;
+    accumulator >>= SIZE_DAY;
     date->month = accumulator & MASK_MONTH;
     accumulator >>= SIZE_MONTH;
-    date->day = accumulator & MASK_DAY;
+    uint32_t year_encoded = accumulator & MASK_DATE_YEAR_UPPER_BITS;
 
     const int decoded_group_count = rvlq_decode_32(&year_encoded, src + offset, src_length - offset);
     if(decoded_group_count < 1)

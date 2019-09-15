@@ -23,12 +23,12 @@ static void demonstrate_encode_date()
     int bytes_encoded = ct_date_encode(&date, data, sizeof(data));
     print_buffer(data, bytes_encoded);
 
-    // Outputs: 00 f5 3e 
+    // Outputs: 5e 01 3e
 }
 
 static void demonstrate_decode_date()
 {
-    std::vector<uint8_t> data = {0x00, 0x79, 0x27};
+    std::vector<uint8_t> data = {0x4f, 0x00, 0x27};
     ct_date date;
     ct_date_decode(data.data(), data.size(), &date);
     printf("%04d-%02d-%02d\n", date.year, date.month, date.day);
