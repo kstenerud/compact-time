@@ -34,7 +34,7 @@ This specification is part of the [Specifications Project](https://github.com/ks
 Implementations
 ---------------
 
-* [C implementation](reference-implementation)
+* [C implementation](https://github.com/kstenerud/c-compact-time)
 * [Go implementation](https://github.com/kstenerud/go-compact-time)
 
 
