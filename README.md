@@ -25,7 +25,7 @@ Features
 Specifications
 --------------
 
-This specification is part of the [Specification Project](https://github.com/kstenerud/specifications)
+This specification is part of the [Specifications Project](https://github.com/kstenerud/specifications)
 
 * [Compact Time Format Specification](compact-time-specification.md)
 
