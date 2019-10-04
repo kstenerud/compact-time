@@ -42,8 +42,6 @@ Implementations
 License
 -------
 
-Copyright 2019 Karl Stenerud
+Copyright Karl Stenerud. All rights reserved.
 
-Specification released under Creative Commons Attribution 4.0 International Public License https://creativecommons.org/licenses/by/4.0/
-
-Reference implementation released under MIT License https://opensource.org/licenses/MIT
+Specifications released under [Creative Commons Attribution 4.0 International Public License](LICENSE.md).
