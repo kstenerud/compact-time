@@ -178,7 +178,7 @@ The latitude and longitude values are encoded into a 32-bit structure, stored in
 | Field         | Bits | Min     | Max    |
 | ------------- | ---- | ------- | ------ |
 | RESERVED      |    2 |       0 |      0 |
-| Longitude     |   15 | -179.99 | 179.99 |
+| Longitude     |   15 | -180.00 | 180.00 |
 | Latitude      |   14 |  -90.00 |  90.00 |
 | lat-long form |    1 |       1 |      1 |
 
