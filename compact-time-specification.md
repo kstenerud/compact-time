@@ -253,6 +253,10 @@ There are benefits and drawbacks to consider when choosing which form to use for
 Year Encoding
 -------------
 
+The year field may be any number of digits, and may be positive (representing AD dates) or negative (representing BC dates).
+
+Note: The Anno Domini system has no zero year (there is no 0 BC or 0 AD), and so the year value `0` is invalid. Although many date systems internally use the value 0 to represent 1 BC and offset all BC dates by 1 for mathematical continuity, it's preferable in interchange formats to avoid potential confusion from such tricks.
+
 Years are encoded as [zigzag signed integers](#zigzag-integer) representing the number of years relative to the epoch date 2000-01-01 00:00:00. Dates closer to this epoch can be stored in fewer bits.
 
 A `year` field will be split across two structures, with the upper bits in the fixed length structure, and the lower bits in the variable length structure. This allows an unlimited year range while keeping the leading zero bits compressible.
