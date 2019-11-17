@@ -177,9 +177,10 @@ The latitude and longitude values are encoded into a 32-bit structure, stored in
 
 | Field         | Bits | Min     | Max    |
 | ------------- | ---- | ------- | ------ |
-| RESERVED      |    2 |       0 |      0 |
+| RESERVED      |    1 |       0 |      0 |
 | Longitude     |   15 | -180.00 | 180.00 |
 | Latitude      |   14 |  -90.00 |  90.00 |
+| RESERVED      |    1 |       0 |      0 |
 | lat-long form |    1 |       1 |      1 |
 
 Latitude and longitude are stored as two's complement signed integers representing hundredths of degrees. This gives a resolution of roughly 1 kilometer at the equator, which is enough to uniquely locate a time zone.
@@ -195,7 +196,8 @@ The area-location form makes use of time zone identifiers from the [IANA time zo
 
 | Field                | Bits | Min | Max | Notes                             |
 | -------------------- | ---- | --- | --- | --------------------------------- |
-| Length               |    7 |   1 | 127 |                                   |
+| Length               |    6 |   1 |  63 |                                   |
+| RESERVED             |    1 |   0 |   0 |                                   |
 | lat-long form        |    1 |   0 |   0 |                                   |
 
 Followed by:
@@ -207,7 +209,7 @@ Followed by:
 
 #### Abbreviated Areas
 
-Since there are only a limited number of areas in the database, the following abbreviations may be used to save space in the area portion of the time zone:
+Since there are only a limited number of areas in the database, the following abbreviations can be used to save space in the area portion of the time zone:
 
 | Area         | Abbreviation |
 | ------------ | ------------ |
@@ -225,7 +227,7 @@ Since there are only a limited number of areas in the database, the following ab
 
 #### Special Areas
 
-The following special values may also be used. They do not contain a location component.
+The following special values can also be used. They do not contain a location component.
 
 | Area    | Abbreviation | Meaning            |
 | ------- | ------------ | ------------------ |
@@ -253,7 +255,7 @@ There are benefits and drawbacks to consider when choosing which form to use for
 Year Encoding
 -------------
 
-The year field may be any number of digits, and may be positive (representing AD dates) or negative (representing BC dates).
+The year field can be any number of digits, and can be positive (representing AD dates) or negative (representing BC dates).
 
 Note: The Anno Domini system has no zero year (there is no 0 BC or 0 AD), and so the year value `0` is invalid. Although many date systems internally use the value 0 to represent 1 BC and offset all BC dates by 1 for mathematical continuity, it's preferable in interchange formats to avoid potential confusion from such tricks.
 
@@ -415,18 +417,19 @@ Time Zone:
 
 | Field         | Width | Value | Encoded           |
 | ------------- | ----- | ----- | ----------------- |
-| RESERVED      |     2 |     0 | `             00` |
+| RESERVED      |     1 |     0 | `              0` |
 | Longitude     |    15 |  2.32 | `000000011101000` |
 | Latitude      |    14 | 48.85 | ` 01001100010101` |
+| RESERVED      |     1 |     0 | `              0` |
 | lat-long form |     1 |     1 | `              1` |
 
 
-    Time Zone:     00 000000011101000 01001100010101 1
-                   00000000 01110100 00100110 00101011
-                   0x00     0x74     0x26     0x2b
-    Little Endian: 0x2b 0x26 0x74 0x00
+    Time Zone:     0 000000011101000 01001100010101 0 1
+                   00000000 11101000 01001100 01010101
+                   0x00     0xe8     0x4c     0x55
+    Little Endian: 0x55 0x4c 0xe8 0x00
 
-    Encoded: [06 f6 bb ed de 77 01 2b 26 74 00]
+    Encoded: [06 f6 bb ed de 77 01 55 4c e8 00]
 
 
 #### If using area/location:
@@ -435,13 +438,14 @@ Time Zone:
 
 | Field           | Width | Value     | Encoded                  |
 | --------------- | ----- | --------- | ------------------------ |
-| Length          |     7 |         7 |                `0000111` |
-| lat-long form   |     1 |         0 |                `      0` |
+| Length          |     6 |         7 |                 `000111` |
+| RESERVED        |     1 |         0 |                 `     0` |
+| lat-long form   |     1 |         0 |                 `     0` |
 | string contents |    56 | "E/Paris" | `[45 2f 50 61 72 69 73]` |
 
-    Time Zone: 0x0e [45 2f 50 61 72 69 73]
+    Time Zone: 0x1c [45 2f 50 61 72 69 73]
 
-    Encoded: [06 f6 bb ed de 77 01 0e 45 2f 50 61 72 69 73]
+    Encoded: [06 f6 bb ed de 77 01 1c 45 2f 50 61 72 69 73]
 
 
 
@@ -458,7 +462,7 @@ Absolute time is a time that is fixed relative to UTC (or relative to an offset 
 
 #### Fixed Time
 
-Fixed time is a time that is fixed to a particular place, and that place has a time zone associated with it (but the time zone may change for political reasons in the future). If the venue changes, only the time zone data needs to be updated. An example would be an appointment in London this coming October 12th at 10:30.
+Fixed time is a time that is fixed to a particular place, and that place has a time zone associated with it (but the time zone might change for political reasons in the future). If the venue changes, only the time zone data needs to be updated. An example would be an appointment in London this coming October 12th at 10:30.
 
 #### Floating Time
 
