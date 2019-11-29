@@ -177,10 +177,8 @@ The latitude and longitude values are encoded into a 32-bit structure, stored in
 
 | Field         | Bits | Min     | Max    |
 | ------------- | ---- | ------- | ------ |
-| RESERVED      |    1 |       0 |      0 |
-| Longitude     |   15 | -180.00 | 180.00 |
-| Latitude      |   14 |  -90.00 |  90.00 |
-| RESERVED      |    1 |       0 |      0 |
+| Longitude     |   16 | -180.00 | 180.00 |
+| Latitude      |   15 |  -90.00 |  90.00 |
 | lat-long form |    1 |       1 |      1 |
 
 Latitude and longitude are stored as two's complement signed integers representing hundredths of degrees. This gives a resolution of roughly 1 kilometer at the equator, which is enough to uniquely locate a time zone.
@@ -196,8 +194,7 @@ The area-location form makes use of time zone identifiers from the [IANA time zo
 
 | Field                | Bits | Min | Max | Notes                             |
 | -------------------- | ---- | --- | --- | --------------------------------- |
-| Length               |    6 |   1 |  63 |                                   |
-| RESERVED             |    1 |   0 |   0 |                                   |
+| Length               |    7 |   1 | 127 |                                   |
 | lat-long form        |    1 |   0 |   0 |                                   |
 
 Followed by:
