@@ -18,26 +18,27 @@ Features
  * Supports leap years and leap seconds.
  * Maintenance-free (no leap second tables to update).
  * Efficient conversion to/from human readable fields (no multiplication or division).
- * Time zones are location-based.
+ * Supports IANA time zones and latitude/longitude time zones.
 
 
 
 Contents
 --------
 
+* [General Structure](#general-structure)
 * [Compact Date](#compact-date)
 * [Compact Time](#compact-time)
 * [Compact Timestamp](#compact-timestamp)
 * [Sub-second Magnitude](#sub-second-magnitude)
+* [Year Encoding](#year-encoding)
+  - [Zigzag Integer](#zigzag-integer)
+* [Proleptic Gregorian Calendar](#proleptic-gregorian-calendar)
 * [Time Zone](#time-zone)
-  - [Latitude-longitude](#latitude-longitude)
   - [Area-Location](#area-location)
     - [Abbreviated Areas](#abbreviated-areas)
     - [Special Areas](#special-areas)
+  - [Latitude-longitude](#latitude-longitude)
   - [Comparison of Forms](#comparison-of-forms)
-* [Year Encoding](#year-encoding)
-* [Zigzag Integer](#zigzag-integer)
-* [Proleptic Gregorian Calendar](#proleptic-gregorian-calendar)
 * [Invalid Encoding](#invalid-encoding)
 * [Examples](#examples)
 * [How to Keep Time](#wow-to-keep-time)
@@ -45,116 +46,158 @@ Contents
 
 
 
+General Structure
+-----------------
+
+All date and time structures are composed of bitfields, which are either encoded as fixed width data, or a combined fixed width and variable width portion:
+
+| Type                            | Encoding         |
+| ------------------------------- | ---------------- |
+| [Date](#compact-date)           | Fixed + Variable |
+| [Time](#compact-time)           | Fixed            |
+| [Timestamp](#compact-timestamp) | Fixed + Variable |
+
+Fixed width data is encoded as a series of octets in little endian byte order, and variable width data is encoded as an [unsigned LEB128](https://en.wikipedia.org/wiki/LEB128).
+
+
+
 Compact Date
 ------------
 
-The compact date structure is composed of the following components:
-
-| Component      | Required |
-| -------------- | -------- |
-| Base structure |     Y    |
-| RVLQ Extension |     Y    |
-
-
-### Base Structure
-
-The base structure is 2 bytes wide, and is stored in little endian byte order.
-
-The [`year` field](#year-encoding) is split across the `base structure` (upper bits) and the `RVLQ extension` (lower bits) to allow compression of leading zeros.
+A compact date's fields are laid out as follows:
 
 | Field                | Bits | Min | Max | Notes                                |
 | -------------------- | ---- | --- | --- | ------------------------------------ |
-| Year (upper bits)    |    7 |   * |   * | See: [year encoding](#year-encoding) |
-| Month                |    4 |   1 |  12 |                                      |
-| Day                  |    5 |   1 |  31 |                                      |
+| Year                 |  14+ |   * |   * | See: [year encoding](#year-encoding) |
+| Month                |   4  |   1 |  12 |                                      |
+| Day                  |   5  |   1 |  31 |                                      |
+
+The fixed portion is 16 bits wide, and the variable portion uses a minimum of 1 octet.
 
 
-### RVLQ Extension
+#### Example: Dec 31, 3000
 
-The RVLQ extension contains the lower bits of the `year` field, and is encoded as an [RVLQ](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md).
+| Field | Width | Value | Encoded          |
+| ----- | ----- | ----- | ---------------- |
+| Year  |    14 |  3000 | `00011111010000` |
+| Month |     4 |    12 | `          1100` |
+| Day   |     5 |    31 | `         11111` |
 
-| Field                | Bits | Min | Max | Notes                                 |
-| -------------------- | ---- | --- | --- | ------------------------------------- |
-| Year (lower bits)    |  7-* |   * |   * |  See: [year encoding](#year-encoding) |
+Layout:
+
+    | Var | | --- Fixed --- |
+    0001111 10100001 10011111
+
+Encoded: `[9f a1 0f]`
 
 
 
 Compact Time
 ------------
 
-The compact time structure is composed of the following components:
-
-| Component      | Required |
-| -------------- | -------- |
-| Base structure |     Y    |
-| Time Zone      |     N    |
-
-
-### Base Structure
-
-The base structure is from 3 to 7 bytes wide (depending on the [`sub-second magnitude`](#sub-second-magnitude)), and is stored in little endian byte order.
+A compact time's fields are laid out as follows:
 
 | Field                | Bits | Min | Max       | Notes                                                |
 | -------------------- | ---- | --- | --------- | ---------------------------------------------------- |
 | RESERVED             |  0-6 |   0 |         0 | Brings the base structure to a multiple of 8 bits    |
-| Sub-seconds          | 0-30 |   0 | 999999999 | Width and units determined by [sub-second magnitude](#sub-second-magnitude) |
-| Second               |    6 |   0 |        60 | 60 to support leap seconds                           |
-| Minute               |    6 |   0 |        59 |                                                      |
 | Hour                 |    5 |   0 |        23 |                                                      |
+| Minute               |    6 |   0 |        59 |                                                      |
+| Second               |    6 |   0 |        60 | 60 to support leap seconds                           |
+| Sub-seconds          | 0-30 |   0 | 999999999 | Width and units determined by [sub-second magnitude](#sub-second-magnitude) |
 | Sub-second Magnitude |    2 |   0 |         3 | Determines [sub-second width](#sub-second-magnitude) |
-| Time Zone is UTC     |    1 |   0 |         1 | If 1, no time zone structure follows                 |
+| Time Zone Present    |    1 |   0 |         1 | If 1, a time zone structure follows                  |
 
-If the `time zone is utc` flag is 0, the base structure is followed by a [time zone](#time-zone).
+The structure will be anywhere from 24 to 56 bits wide (determined by the [`sub-second magnitude`](#sub-second-magnitude)).
+
+| Magnitude | Total Width | Sub-Second Width | Reserved Field Width |
+| --------- | ----------- | ---------------- | -------------------- |
+|     0     |      24     |         0        |           4          |
+|     1     |      32     |        10        |           2          |
+|     2     |      40     |        20        |           0          |
+|     3     |      56     |        30        |           6          |
+
+If the `Time Zone Present` flag is 1, the time structure is followed by a [time zone structure](#time-zone). If the flag is 0, the time zone is UTC.
+
+The RESERVED field must always be set to 0.
+
+
+#### Example: 23:59:59 UTC
+
+| Field                | Width | Value | Encoded  |
+| -------------------- | ----- | ----- | -------- |
+| RESERVED             |     4 |     0 | `  0000` |
+| Hour                 |     5 |    23 | ` 10111` |
+| Minute               |     6 |    59 | `111011` |
+| Second               |     6 |    59 | `111011` |
+| Sub-seconds          |     0 |     0 |          |
+| Sub-second Magnitude |     2 |     0 | `    00` |
+| Time Zone Present    |     1 |     0 | `     0` |
+
+Layout:
+
+    | ------- Fixed -------- |
+    00001011 11110111 11011000
+
+Encoded: `[b8 f7 0b]`
 
 
 
 Compact Timestamp
 -----------------
 
-The compact timestamp structure is composed of the following components:
-
-| Component      | Required |
-| -------------- | -------- |
-| Base structure |     Y    |
-| RVLQ Extension |     Y    |
-| Time Zone      |     N    |
-
-
-### Base Structure
-
-The base structure is from 4 to 8 bytes wide (depending on the [`sub-second magnitude`](#sub-second-magnitude)), and is stored in little endian byte order.
-
-The [`year` field](#year-encoding) is split across the `base structure` (upper bits) and the `RVLQ extension` (lower bits) to allow compression of leading zeros.
+A compact timestamp's fields are laid out as follows:
 
 | Field                | Bits | Min | Max       | Notes                                                |
 | -------------------- | ---- | --- | --------- | ---------------------------------------------------- |
-| Year (upper bits)    |  0-6 |   * |         * | Brings the base structure to a multiple of 8 bits    |
-| Sub-seconds          | 0-30 |   0 | 999999999 | Width and units determined by [sub-second magnitude](#sub-second-magnitude) |
+| Year                 |   8+ |   * |         * | See: [year encoding](#year-encoding)                 |
 | Month                |    4 |   1 |        12 |                                                      |
 | Day                  |    5 |   1 |        31 |                                                      |
 | Hour                 |    5 |   0 |        23 |                                                      |
 | Minute               |    6 |   0 |        59 |                                                      |
 | Second               |    6 |   0 |        60 | Max 60 to support leap seconds                       |
-| Sub-second Magnitude |    2 |   0 |         3 | [Determines sub-second width](#sub-second-magnitude) |
+| Sub-seconds          | 0-30 |   0 | 999999999 | Width and units determined by [sub-second magnitude](#sub-second-magnitude) |
+| Sub-second Magnitude |    2 |   0 |         3 | Determines [sub-second width](#sub-second-magnitude) |
+| Time Zone Present    |    1 |   0 |         1 | If 1, a time zone structure follows                  |
+
+The fixed portion will be anywhere from 32 to 64 bits wide (determined by the [`sub-second magnitude`](#sub-second-magnitude)), and the variable portion uses a minimum of 1 octet.
+
+| Magnitude | Fixed Width | Sub-Second Width | Min Year Width |
+| --------- | ----------- | ---------------- | -------------- |
+|     0     |      32     |         0        |       10       |
+|     1     |      40     |        10        |        8       |
+|     2     |      56     |        20        |       14       |
+|     3     |      64     |        30        |       12       |
+
+If the `Time Zone Present` flag is 1, the time structure is followed by a [time zone structure](#time-zone). If the flag is 0, the time zone is UTC.
 
 
-### RVLQ Extension
+#### Example: Dec 31, 2000, 23:59:59
 
-The RVLQ extension contains the lower bits of the `year` field, as well as the `time zone is utc` flag, and is stored as an [RVLQ](https://github.com/kstenerud/vlq/blob/master/vlq-specification.md).
+| Field                | Width | Value | Encoded      |
+| -------------------- | ----- | ----- | ------------ |
+| Year                 |    10 |     0 | `0000000000` |
+| Month                |     4 |    12 | `      1100` |
+| Day                  |     5 |    31 | `     11111` |
+| Hour                 |     5 |    23 | `     10111` |
+| Minute               |     6 |    59 | `    111011` |
+| Second               |     6 |    59 | `    111011` |
+| Sub-seconds          |     0 |     0 |              |
+| Sub-second Magnitude |     2 |     0 | `        00` |
+| Time Zone Present    |     1 |     0 | `         0` |
 
-| Field                | Bits | Min | Max | Notes                                   |
-| -------------------- | ---- | --- | --- | --------------------------------------- |
-| Year (lower bits)    |  6-* |   * |   * | See: [year encoding](#year-encoding)    |
-| Time Zone is UTC     |    1 |   0 |   1 | If 1, no time zone structure follows    |
+Layout:
 
-If the `time zone is utc` flag is 0, the RVLQ extension is followed by a [time zone](#time-zone).
+    | Var | | ------------ Fixed ------------ |
+    0000000 00011001 11111011 11110111 11011000
+
+Encoded: `[d8 f7 fb 19 00]`
 
 
 
 Sub-second Magnitude
 --------------------
 
-The `sub-second magnitude` field determines how many bits of sub-second data are present, and the units:
+The `sub-second magnitude` field determines how many bits of `sub-second` data are present, and the units:
 
 | Magnitude | Sub-second Bits | Units        | Min | Max       |
 | --------- | --------------- | ------------ | --- | --------- |
@@ -165,37 +208,59 @@ The `sub-second magnitude` field determines how many bits of sub-second data are
 
 
 
+Year Encoding
+-------------
+
+The year field can be any number of digits, and can be positive (representing AD dates) or negative (representing BC dates).
+
+Note: The Anno Domini system has no zero year (there is no 0 BC or 0 AD), thus year value `0` is invalid. Although many date systems internally use the value 0 to represent 1 BC and offset all BC dates by 1 for mathematical continuity, it's preferable in interchange formats to avoid potential confusion from such tricks.
+
+Years are encoded as [zigzag signed integers](#zigzag-integer) representing the number of years relative to the epoch date 2000-01-01 00:00:00. Dates closer to this epoch can be stored in fewer bits.
+
+
+### Zigzag Integer
+
+[Zigzag encoding](https://en.wikipedia.org/wiki/Variable-length_quantity#Zigzag_encoding) is a scheme that encodes signed integers such that both positive and negative values have their upper bits cleared. This helps with variable-length encodings, which typically compress high order zero bits.
+
+In zigzag encoding, the sign is encoded into the low bit rather than the high bit of the value, such that incrementing the encoded binary representation alternates between negative and positive values.
+
+| Original | Bits       | Encoded     |
+| -------- | ---------- | ----------- |
+|        0 | `00000000` | `0000000 0` |
+|       -1 | `11111111` | `0000000 1` |
+|        1 | `00000001` | `0000001 0` |
+|       -2 | `11111110` | `0000001 1` |
+|        2 | `00000010` | `0000010 0` |
+
+Assuming a signed integer size of 32, values would be encoded like so:
+
+    encoded_value = (signed_value << 1) ^ (signed_value >> 31)
+
+Where `<<` and `>>` are arithmetic bit shifts, and `^` is the logical XOR operator.
+
+
+
+Proleptic Gregorian Calendar
+-----------------------------
+
+Dates prior to the introduction of the Gregorian Calendar in 1582 must be stored according to the proleptic Gregorian calender.
+
+
+
 Time Zone
 ---------
 
-A time zone can take one of two forms: `latitude-longitude`, or `area-location`.
-
-
-### Latitude-Longitude
-
-The latitude and longitude values are encoded into a 32-bit structure, stored in little endian byte order:
-
-| Field         | Bits | Min     | Max    |
-| ------------- | ---- | ------- | ------ |
-| Longitude     |   16 | -180.00 | 180.00 |
-| Latitude      |   15 |  -90.00 |  90.00 |
-| lat-long form |    1 |       1 |      1 |
-
-Latitude and longitude are stored as two's complement signed integers representing hundredths of degrees. This gives a resolution of roughly 1 kilometer at the equator, which is enough to uniquely locate a time zone.
-
-The location, combined with an associated date, refers to the time zone that the location falls under on that particular date. Location data should ideally be within the boundaries of a politically notable region whenever possible.
-
-Note: Time zone values that contain different longitude/latitude values, but still refer to the same time zone at their particular time (for example, [48.85, 2.32] on Dec 10, 2010, and [48.90, 2.28] on Jan 1, 2000, which both refer to Europe/Paris in the same daylight savings mode), are considered equal.
+A time zone can take one of two forms: `area-location` or `latitude-longitude`. The form is determined by the `lat-long form` flag.
 
 
 ### Area-Location
 
 The area-location form makes use of time zone identifiers from the [IANA time zone database](https://www.iana.org/time-zones). A time zone is encoded as a length-delimited string in the form `Area/Location`.
 
-| Field                | Bits | Min | Max | Notes                             |
-| -------------------- | ---- | --- | --- | --------------------------------- |
-| Length               |    7 |   1 | 127 |                                   |
-| lat-long form        |    1 |   0 |   0 |                                   |
+| Field                | Bits | Min | Max |
+| -------------------- | ---- | --- | --- |
+| Length               |    7 |   1 | 127 |
+| lat-long form        |    1 |   0 |   0 |
 
 Followed by:
 
@@ -206,7 +271,7 @@ Followed by:
 
 #### Abbreviated Areas
 
-Since there are only a limited number of areas in the database, the following abbreviations can be used to save space in the area portion of the time zone:
+Since there are only a limited number of areas in the database, the following area abbreviations can be used to save space in the area portion of the time zone:
 
 | Area         | Abbreviation |
 | ------------ | ------------ |
@@ -232,63 +297,36 @@ The following special values can also be used. They do not contain a location co
 | `Local` | `L`          | "Local" time zone, meaning that the accompanying time value is to be interpreted as if in the time zone of the observer. |
 
 
+### Latitude-Longitude
+
+The latitude and longitude values are encoded into a 32-bit structure, stored in little endian byte order:
+
+| Field         | Bits | Min     | Max    |
+| ------------- | ---- | ------- | ------ |
+| Longitude     |   16 | -180.00 | 180.00 |
+| Latitude      |   15 |  -90.00 |  90.00 |
+| lat-long form |    1 |       1 |      1 |
+
+Latitude and longitude are stored as two's complement signed integers representing hundredths of degrees. This gives a resolution of roughly 1 kilometer at the equator, which is enough to uniquely locate a time zone.
+
+The location, combined with an associated date, refers to the time zone that the location falls under on that particular date. Location data should ideally be within the boundaries of a politically notable region whenever possible.
+
+Note: Time zone values that contain different longitude/latitude values, but still refer to the same time zone at their particular time, are considered equal. For example: `[48.85, 2.32] on Dec 10, 2010`, and `[48.90, 2.28] on Jan 1, 2000`: both refer to Europe/Paris in the same daylight savings mode.
+
+
 ### Comparison of Forms
 
 There are benefits and drawbacks to consider when choosing which form to use for time zones.
 
-#### Latitude-Longitude
+Area-Location:
+
+  - More widely implemented.
+  - More recognizable to humans.
+
+Latitude-Longitude:
 
   - Smaller size.
   - Impervious to the effects of changing names or boundaries over time.
-
-#### Area-Location
-
-  - More widely implemented.
-  - Less complex decoding procedure.
-  - Human decodable without a database.
-
-
-
-Year Encoding
--------------
-
-The year field can be any number of digits, and can be positive (representing AD dates) or negative (representing BC dates).
-
-Note: The Anno Domini system has no zero year (there is no 0 BC or 0 AD), and so the year value `0` is invalid. Although many date systems internally use the value 0 to represent 1 BC and offset all BC dates by 1 for mathematical continuity, it's preferable in interchange formats to avoid potential confusion from such tricks.
-
-Years are encoded as [zigzag signed integers](#zigzag-integer) representing the number of years relative to the epoch date 2000-01-01 00:00:00. Dates closer to this epoch can be stored in fewer bits.
-
-A `year` field will be split across two structures, with the upper bits in the fixed length structure, and the lower bits in the variable length structure. This allows an unlimited year range while keeping the leading zero bits compressible.
-
-
-
-Zigzag Integer
---------------
-
-A zigzag signed integer is an encoding scheme which encodes positive and negative values in a manner that ensures the upper bits remain cleared in order to support leading zero bit compression. It's most commonly used in conjunction with variable-length encodings, for example in [Google's protocol buffers](https://developers.google.com/protocol-buffers/docs/encoding#signed-integers).
-
-In zigzag encoding, the sign is encoded into the low bit rather than the high bit of the value, such that incrementing the encoded binary representation alternates between negative and positive values.
-
-| Original | Encoded | Bits    |
-| -------- | ------- | ------- |
-|        0 |       0 | `000 0` |
-|       -1 |       1 | `000 1` |
-|        1 |       2 | `001 0` |
-|       -2 |       3 | `001 1` |
-|        2 |       4 | `010 0` |
-
-Assuming a signed integer size of 32, values would be encoded like so:
-
-    encoded_value = (signed_value << 1) ^ (signed_value >> 31)
-
-Where `<<` and `>>` are arithmetic bit shifts, and `^` is the logical XOR operator.
-
-
-
-Proleptic Gregorian Calendar
------------------------------
-
-Dates prior to the introduction of the Gregorian Calendar in 1582 must be stored according to the proleptic Gregorian calender.
 
 
 
@@ -304,145 +342,97 @@ RESERVED fields must contain all zero bits. If a RESERVED field contains any `1`
 Examples
 --------
 
-### Example 1:
+### Example: June 24, 2019, 17:53:04.180 UTC
 
-    June 24, 2019, 17:53:04.180 UTC
-
-Year is calculated as `2000` + `19 (0x13)`, encoded as zigzag: `0x26`.
-
-The sub-second portion of this date goes to the millisecond, which requires a magnitude field of 1. Magnitude 1 implies a base structure of 40 bits, containing 2 high bits of year data to bring the structure to a multiple of 8 bits.
-
-Base structure (40 bits):
+Year is calculated as `2000` + `19 (0x13)`, encoded as zigzag: `0x26` (`100110`).
 
 | Field                | Width | Value | Encoded      |
 | -------------------- | ----- | ----- | ------------ |
-| Year (high bits)     |     2 |     0 | `        00` |
-| Sub-seconds          |    10 |   180 | `0010110100` |
+| Year                 |     8 |  0x26 | `  00100110` |
 | Month                |     4 |     6 | `      0110` |
 | Day                  |     5 |    24 | `     11000` |
 | Hour                 |     5 |    17 | `     10001` |
 | Minute               |     6 |    53 | `    110101` |
 | Second               |     6 |     4 | `    000100` |
+| Sub-seconds          |    10 |   180 | `0010110100` |
 | Sub-second Magnitude |     2 |     1 | `        01` |
+| Time Zone Present    |     1 |     0 | `         0` |
 
-RVLQ:
+    Data:    00100110 0110 11000 10001 110101 000100 0010110100 01 0
 
-| Field                | Width | Value | Encoded  |
-| -------------------- | ----- | ----- | -------- |
-| Continuation         |     1 |     0 | `     0` |
-| Year (next 7 bits)   |     6 |  0x26 | `100110` |
-| Time Zone is UTC     |     1 |     1 | `     1` |
+    Split:   | Var |  | ----------------- Fixed ---------------- |
+             0010011  00110110 00100011 10101000 10000101 10100010
 
-Encoded value:
-
-    Base:          00 0010110100 0110 11000 10001 110101 000100 01
-                   00001011 01000110 11000100 01110101 00010001
-                   0x0b     0x46     0xc4     0x75     0x11
-    Little Endian: 0x11, 0x75, 0xc4, 0x46, 0x0b
-
-    RVLQ:          0 100110 1
-                   01001101
-                   0x4d
-
-    Encoded: [11 75 c4 46 0b 4d]
+    Encoded: [a2 85 a8 23 36 13]
 
 
-### Example 2:
+### Example: January 7, 40000
 
-    January 7, 5000
+Year is calculated as `2000` + `38000` (`0x9470`), encoded as zigzag: `0x128e0` (`10010100011100000`).
 
+| Field | Width | Value  | Encoded             |
+| ----- | ----- | ------ | ------------------- |
+| Year  |     7 | 0x9470 | `10010100011100000` |
+| Month |     4 |      1 | `             0001` |
+| Day   |     5 |      7 | `            00111` |
 
-Year is calculated as `2000` + `3000`, encoded as zigzag: `0x1770`.
+    Data:    10010100011100000 0001 00111
 
-     0101110 1110000
+    Split:   |   Var  |  | --- Fixed --- |
+             1001010001  11000000 00100111
 
-Base structure:
+    ULEB128: | ---- Var ---- |  | --- Fixed --- |
+             00000100 11010001  11000000 00100111
 
-| Field                | Width | Value | Encoded   |
-| -------------------- | ----- | ----- | --------- |
-| Day                  |     5 |     7 | `  00111` |
-| Month                |     4 |     1 | `   0001` |
-| Year (upper bits)    |     7 |  0x2e | `0101110` |
-
-RVLQ:
-
-| Field                | Width | Value | Encoded   |
-| -------------------- | ----- | ----- | --------- |
-| Continuation         |     1 |     0 | `      0` |
-| Year (next 7 bits)   |     7 |  0x70 | `1110000` |
-
-Encoded value:
-
-    Base:          00111 0001 0101110
-                   00111000 10101110
-                   0x38     0xae
-    Little Endian: 0xae 0x38
-
-    RVLQ:          0 1110000
-                   01110000
-                   0x70
-
-    Encoded: [ae 38 70]
+    Encoded: [27 c0 d1 04]
 
 
-### Example 3:
+### Example: 00:54:47.394129115, Europe/Paris
 
-    00:54:47.394129115, Europe/Paris
+The sub-second portion goes to the nanosecond, which requires a magnitude field of 3.
 
-The sub-second portion of this date goes to the nanosecond, which requires a magnitude field of 3. Magnitude 3 implies a base structure of 56 bits, containing 6 RESERVED bits.
-
-Base structure (56 bits):
+#### Time:
 
 | Field                | Width | Value     | Encoded                          |
 | -------------------- | ----- | --------- | -------------------------------- |
 | RESERVED             |     6 |         0 | `                        000000` |
-| Sub-seconds          |    30 | 394129115 | `010111011111011110111011011011` |
-| Second               |     6 |        47 | `                        101111` |
-| Minute               |     6 |        54 | `                        110110` |
 | Hour                 |     5 |        00 | `                         00000` |
+| Minute               |     6 |        54 | `                        110110` |
+| Second               |     6 |        47 | `                        101111` |
+| Sub-seconds          |    30 | 394129115 | `010111011111011110111011011011` |
 | Sub-second Magnitude |     2 |         3 | `                            11` |
-| Time Zone is UTC     |     1 |         0 | `                             0` |
+| Time Zone Present    |     1 |         1 | `                             1` |
 
-    Base:          000000 010111011111011110111011011011 101111 110110 00000 11 0
-                   00000001 01110111 11011110 11101101 10111011 11110110 00000110
-                   0x01     0x77     0xde     0xed     0xbb     0xf6     0x06
-    Little Endian: 0x06 0xf6 0xbb 0xed 0xde 0x77 0x01
+    Layout:  000000 00000 110110 101111 010111011111011110111011011011 11 1
+             00000000 00011011 01011110 10111011 11101111 01110110 11011111
 
-#### If using latitude-longitide:
+    Encoded: [df 76 ef bb 5e 1b 00]
 
-Time Zone:
-
-| Field         | Width | Value | Encoded           |
-| ------------- | ----- | ----- | ----------------- |
-| RESERVED      |     1 |     0 | `              0` |
-| Longitude     |    15 |  2.32 | `000000011101000` |
-| Latitude      |    14 | 48.85 | ` 01001100010101` |
-| RESERVED      |     1 |     0 | `              0` |
-| lat-long form |     1 |     1 | `              1` |
-
-
-    Time Zone:     0 000000011101000 01001100010101 0 1
-                   00000000 11101000 01001100 01010101
-                   0x00     0xe8     0x4c     0x55
-    Little Endian: 0x55 0x4c 0xe8 0x00
-
-    Encoded: [06 f6 bb ed de 77 01 55 4c e8 00]
-
-
-#### If using area/location:
+#### Time Zone (if using area/location):
 
 Time Zone:
 
 | Field           | Width | Value     | Encoded                  |
 | --------------- | ----- | --------- | ------------------------ |
-| Length          |     6 |         7 |                 `000111` |
-| RESERVED        |     1 |         0 |                 `     0` |
+| Length          |     7 |         7 |                `0000111` |
 | lat-long form   |     1 |         0 |                 `     0` |
-| string contents |    56 | "E/Paris" | `[45 2f 50 61 72 69 73]` |
 
-    Time Zone: 0x1c [45 2f 50 61 72 69 73]
+Followed by string contents "E/Paris"
 
-    Encoded: [06 f6 bb ed de 77 01 1c 45 2f 50 61 72 69 73]
+    Encoded: [0e 45 2f 50 61 72 69 73]
+
+#### Time Zone (if using latitude/longitude):
+
+| Field         | Width | Value | Encoded            |
+| ------------- | ----- | ----- | ------------------ |
+| Longitude     |    16 |  2.32 | `0000000011101000` |
+| Latitude      |    15 | 48.85 | ` 001001100010101` |
+| lat-long form |     1 |     1 | `               1` |
+
+    Layout:  0000000011101000 001001100010101 1
+             00000000 11101000 00100110 00101011
+
+    Encoded: [2b 46 e8 00]
 
 
 
@@ -455,20 +445,20 @@ There are three main kinds of time:
 
 #### Absolute Time
 
-Absolute time is a time that is fixed relative to UTC (or relative to an offset from UTC). It is not affected by daylight savings time, nor will it ever change if an area's time zone changes for political reasons. Absolute time is best recorded in the UTC time zone, and is mostly useful for events in the past (because the time zone is now fixed at the time of the event, so it no longer matters what specific time zone was in effect).
+Absolute time is a time that is fixed relative to UTC (or relative to an offset from UTC). It is not affected by daylight savings time, nor will it ever change if an area's time zone changes for political reasons. Absolute time is best recorded in the UTC time zone, and is mostly useful for events in the past (because the time zone is now fixed at the time of the event, so it probably no longer matters what specific time zone was in effect).
 
 #### Fixed Time
 
-Fixed time is a time that is fixed to a particular place, and that place has a time zone associated with it (but the time zone might change for political reasons in the future). If the venue changes, only the time zone data needs to be updated. An example would be an appointment in London this coming October 12th at 10:30.
+Fixed time is a time that is fixed to a particular place, and that place has a time zone associated with it (but the time zone might change for political reasons in the future,for example with daylight savings). If the venue changes, only the time zone data needs to be updated. An example would be an appointment in London this coming October 12th at 10:30.
 
 #### Floating Time
 
-Floating (or local) time is always relative to the time zone of the observer. If you travel and change time zones, floating time changes zones with you. If someone else looks at a floating time, it will have a different absolute value from yours if you happen to be in different time zones. An example would be an 8:00 morning workout.
+Floating (or local) time is always relative to the time zone of the observer. If you travel and change time zones, floating time changes zones with you. If you and another observer are in different time zones and observe the same floating time value, the absolute times you calculate will be different. An example would be your 8:00 morning workout.
 
 
 ### When to Use Each Kind
 
-Use whichever kind of time most succinctly and completely handles your time needs. Don't depend on time zone information as a proxy for a location; that's depending on a side effect, which is always brittle. Store location information separately if it's important.
+Use whichever kind of time most succinctly and completely handles your time needs. Don't depend on time zone information as a proxy for a location; that's depending on a side effect, which is always brittle. Always store location information separately if it's important.
 
 | Situation           | Kind                                            |
 | ------------------- | ----------------------------------------------- |
