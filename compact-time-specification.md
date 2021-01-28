@@ -40,6 +40,7 @@ Contents
   - [Latitude-longitude](#latitude-longitude)
   - [Comparison of Forms](#comparison-of-forms)
 * [Invalid Encoding](#invalid-encoding)
+  - [Zero Value](#zero-value)
 * [Examples](#examples)
 * [How to Keep Time](#wow-to-keep-time)
 * [License](#license)
@@ -77,11 +78,11 @@ The fixed portion is 16 bits wide, and the variable portion uses a minimum of 1 
 
 #### Example: Dec 31, 3000
 
-| Field | Width | Value | Encoded          |
-| ----- | ----- | ----- | ---------------- |
-| Year  |    14 |  3000 | `00011111010000` |
-| Month |     4 |    12 | `          1100` |
-| Day   |     5 |    31 | `         11111` |
+| Field | Width | Value | Encoded          | Notes                                                      |
+| ----- | ----- | ----- | ---------------- | ---------------------------------------------------------- |
+| Year  |    14 |  2000 | `00011111010000` | (Year 3000) - (bias of 2000) = 1000, encoded zigzag = 2000 |
+| Month |     4 |    12 | `          1100` |                                                            |
+| Day   |     5 |    31 | `         11111` |                                                            |
 
 Layout:
 
@@ -118,14 +119,14 @@ The structure will be anywhere from 24 to 56 bits wide (determined by the [`sub-
 
 If the `Time Zone Present` flag is 1, the time structure is followed by a [time zone structure](#time-zone). If the flag is 0, the time zone is UTC.
 
-The RESERVED field must always be set to 0.
+The RESERVED field must always be set to all 1 bits.
 
 
 #### Example: 23:59:59 UTC
 
 | Field                | Width | Value | Encoded  |
 | -------------------- | ----- | ----- | -------- |
-| RESERVED             |     4 |     0 | `  0000` |
+| RESERVED             |     4 |     0 | `  1111` |
 | Hour                 |     5 |    23 | ` 10111` |
 | Minute               |     6 |    59 | `111011` |
 | Second               |     6 |    59 | `111011` |
@@ -136,9 +137,9 @@ The RESERVED field must always be set to 0.
 Layout:
 
     | ------- Fixed -------- |
-    00001011 11110111 11011000
+    11111011 11110111 11011000
 
-Encoded: `[b8 f7 0b]`
+Encoded: `[b8 f7 fb]`
 
 
 
@@ -173,17 +174,17 @@ If the `Time Zone Present` flag is 1, the time structure is followed by a [time 
 
 #### Example: Dec 31, 2000, 23:59:59
 
-| Field                | Width | Value | Encoded      |
-| -------------------- | ----- | ----- | ------------ |
-| Year                 |    10 |     0 | `0000000000` |
-| Month                |     4 |    12 | `      1100` |
-| Day                  |     5 |    31 | `     11111` |
-| Hour                 |     5 |    23 | `     10111` |
-| Minute               |     6 |    59 | `    111011` |
-| Second               |     6 |    59 | `    111011` |
-| Sub-seconds          |     0 |     0 |              |
-| Sub-second Magnitude |     2 |     0 | `        00` |
-| Time Zone Present    |     1 |     0 | `         0` |
+| Field                | Width | Value | Encoded      | Notes                                                |
+| -------------------- | ----- | ----- | ------------ | ---------------------------------------------------- |
+| Year                 |    10 |     0 | `0000000000` | (Year 2000) - (bias of 2000) = 0, encoded zigzag = 0 |
+| Month                |     4 |    12 | `      1100` |                                                      |
+| Day                  |     5 |    31 | `     11111` |                                                      |
+| Hour                 |     5 |    23 | `     10111` |                                                      |
+| Minute               |     6 |    59 | `    111011` |                                                      |
+| Second               |     6 |    59 | `    111011` |                                                      |
+| Sub-seconds          |     0 |     0 |              |                                                      |
+| Sub-second Magnitude |     2 |     0 | `        00` |                                                      |
+| Time Zone Present    |     1 |     0 | `         0` |                                                      |
 
 Layout:
 
@@ -335,7 +336,18 @@ Invalid Encoding
 
 If any field contains values outside of its allowed range, the entire time/date/timestamp is invalid.
 
-RESERVED fields must contain all zero bits. If a RESERVED field contains any `1` bits, the time/date/timestamp is invalid.
+RESERVED fields must contain all one bits. If a RESERVED field contains any `0` bits, the time/date/timestamp is invalid.
+
+
+### Zero Values
+
+Values made of all zero bits are guaranteed to be invalid:
+
+* Date value [`00 00 00`] has 0 for month and day, which is invalid.
+* Time value [`00 00 00`] has 0 bits in the 4-bit reserved section, which is invalid.
+* Timestamp value [`00 00 00 00 00`] has 0 for month and day, which is invalid.
+
+These invalid encodings can be useful as a marker to represent unset or missing time values.
 
 
 
