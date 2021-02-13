@@ -42,7 +42,7 @@ Contents
 * [Invalid Encoding](#invalid-encoding)
   - [Zero Value](#zero-value)
 * [Examples](#examples)
-* [How to Keep Time](#wow-to-keep-time)
+* [How to Keep Time](#how-to-keep-time)
 * [License](#license)
 
 
