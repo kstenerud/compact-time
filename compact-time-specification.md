@@ -126,7 +126,7 @@ The RESERVED field must always be set to all 1 bits.
 
 | Field                | Width | Value | Encoded  |
 | -------------------- | ----- | ----- | -------- |
-| RESERVED             |     4 |     0 | `  1111` |
+| RESERVED             |     4 |     * | `  1111` |
 | Hour                 |     5 |    23 | ` 10111` |
 | Minute               |     6 |    59 | `111011` |
 | Second               |     6 |    59 | `111011` |
@@ -139,7 +139,7 @@ Layout:
     | ------- Fixed -------- |
     11111011 11110111 11011000
 
-Encoded: `[b8 f7 fb]`
+Encoded: `[d8 f7 fb]`
 
 
 
@@ -407,7 +407,7 @@ The sub-second portion goes to the nanosecond, which requires a magnitude field 
 
 | Field                | Width | Value     | Encoded                          |
 | -------------------- | ----- | --------- | -------------------------------- |
-| RESERVED             |     6 |         0 | `                        000000` |
+| RESERVED             |     6 |         * | `                        111111` |
 | Hour                 |     5 |        00 | `                         00000` |
 | Minute               |     6 |        54 | `                        110110` |
 | Second               |     6 |        47 | `                        101111` |
@@ -415,10 +415,10 @@ The sub-second portion goes to the nanosecond, which requires a magnitude field 
 | Sub-second Magnitude |     2 |         3 | `                            11` |
 | Time Zone Present    |     1 |         1 | `                             1` |
 
-    Layout:  000000 00000 110110 101111 010111011111011110111011011011 11 1
-             00000000 00011011 01011110 10111011 11101111 01110110 11011111
+    Layout:  111111 00000 110110 101111 010111011111011110111011011011 11 1
+             11111100 00011011 01011110 10111011 11101111 01110110 11011111
 
-    Encoded: [df 76 ef bb 5e 1b 00]
+    Encoded: [df 76 ef bb 5e 1b fc]
 
 #### Time Zone (if using area/location):
 
@@ -444,7 +444,7 @@ Followed by string contents "E/Paris"
     Layout:  0000000011101000 001001100010101 1
              00000000 11101000 00100110 00101011
 
-    Encoded: [2b 46 e8 00]
+    Encoded: [2b 26 e8 00]
 
 
 
