@@ -18,7 +18,7 @@ Features
  * Supports leap years and leap seconds.
  * Maintenance-free (no leap second tables to update).
  * Efficient conversion to/from human readable fields (no multiplication or division).
- * Supports IANA time zones and latitude/longitude time zones.
+ * Supports UTC, UTC offset, IANA time zones and latitude/longitude time zones.
 
 
 
@@ -38,7 +38,10 @@ Contents
     - [Abbreviated Areas](#abbreviated-areas)
     - [Special Areas](#special-areas)
   - [Latitude-longitude](#latitude-longitude)
+  - [UTC Offset](#utc-offset)
+  - [UTC](#utc)
   - [Comparison of Forms](#comparison-of-forms)
+* [Reserved Fields](#reserved-fields)
 * [Invalid Encoding](#invalid-encoding)
   - [Zero Value](#zero-value)
 * [Examples](#examples)
@@ -50,15 +53,17 @@ Contents
 General Structure
 -----------------
 
-All date and time structures are composed of bitfields, which are either encoded as fixed width data, or a combined fixed width and variable width portion:
+All structures are composed of bitfields, which are either encoded as fixed width data, or a combined fixed width and variable width portion.
 
-| Type                            | Encoding         |
+ * Fixed width data is encoded as an unsigned integer, stored in little endian byte order.
+ * Variable width data is encoded as an [unsigned LEB128](https://en.wikipedia.org/wiki/LEB128).
+
+| Structure                       | Portion(s)       |
 | ------------------------------- | ---------------- |
 | [Date](#compact-date)           | Fixed + Variable |
 | [Time](#compact-time)           | Fixed            |
 | [Timestamp](#compact-timestamp) | Fixed + Variable |
-
-Fixed width data is encoded as a series of octets in little endian byte order, and variable width data is encoded as an [unsigned LEB128](https://en.wikipedia.org/wiki/LEB128).
+| [Time Zone](#time-zone)         | Fixed            |
 
 
 
@@ -119,7 +124,7 @@ The structure will be anywhere from 24 to 56 bits wide (determined by the [`sub-
 
 If the `Time Zone Present` flag is 1, the time structure is followed by a [time zone structure](#time-zone). If the flag is 0, the time zone is UTC.
 
-The RESERVED field must always be set to all 1 bits.
+The RESERVED field **MUST** always be set to all 1 bits.
 
 
 #### Example: 23:59:59 UTC
@@ -244,26 +249,30 @@ Where `<<` and `>>` are arithmetic bit shifts, and `^` is the logical XOR operat
 Proleptic Gregorian Calendar
 -----------------------------
 
-Dates prior to the introduction of the Gregorian Calendar in 1582 must be stored according to the proleptic Gregorian calender.
+Dates prior to the introduction of the Gregorian Calendar in 1582 **MUST** be stored according to the proleptic Gregorian calender.
 
 
 
 Time Zone
 ---------
 
-A time zone can take one of two forms: `area-location` or `latitude-longitude`. The form is determined by the `lat-long form` flag.
+A time zone can take one of three forms:
+
+ * Area-Location
+ * Latitude-Longitude
+ * UTC-Offset.
 
 
 ### Area-Location
 
-The area-location form makes use of time zone identifiers from the [IANA time zone database](https://www.iana.org/time-zones). A time zone is encoded as a length-delimited string in the form `Area/Location`.
+The area-location form represents time zones using length-delimited string identifiers from the [IANA time zone database](https://www.iana.org/time-zones). This form is selected by setting the `lat-long form` bit to 0 in the header:
 
 | Field                | Bits | Min | Max |
 | -------------------- | ---- | --- | --- |
 | Length               |    7 |   1 | 127 |
 | lat-long form        |    1 |   0 |   0 |
 
-Followed by:
+The length (which **MUST** be nonzero) specifies the byte length of the area-location string field that follows the time zone structure:
 
 | Field                | Bits | Min | Max | Notes                             |
 | -------------------- | ---- | --- | --- | --------------------------------- |
@@ -300,7 +309,7 @@ The following special values can also be used. They do not contain a location co
 
 ### Latitude-Longitude
 
-The latitude and longitude values are encoded into a 32-bit structure, stored in little endian byte order:
+Latitude-longitude form is selected by setting the `lat-long form` bit to 1 in the header. In this form, the entire timezone structure is contained within the 32-bit fixed width time zone structure as follows:
 
 | Field         | Bits | Min     | Max    |
 | ------------- | ---- | ------- | ------ |
@@ -313,6 +322,26 @@ Latitude and longitude are stored as two's complement signed integers representi
 The location, combined with an associated date, refers to the time zone that the location falls under on that particular date. Location data should ideally be within the boundaries of a politically notable region whenever possible.
 
 Note: Time zone values that contain different longitude/latitude values, but still refer to the same time zone at their particular time, are considered equal. For example: `[48.85, 2.32] on Dec 10, 2010`, and `[48.90, 2.28] on Jan 1, 2000`: both refer to Europe/Paris in the same daylight savings mode.
+
+### UTC Offset
+
+The UTC offset form specifies an hours-and-minutes offset from UTC. It exists for historical reasons, and its use is discouraged except as a means to interface with legacy systems.
+
+UTC offset mode is specified by setting the `lat-long form` bit to 0, and also setting the [area-location](#area-location) length field to 0. The offset data is stored in the 24-bit fixed width time zone structure as follows:
+
+| Field                | Bits |   Min |  Max |
+| -------------------- | ---- | ----- | ---- |
+| RESERVED             |    6 |  0x3f | 0x3f |
+| minutes offset       |   12 | -1439 | 1439 |
+| zero-length          |    7 |     0 |    0 |
+| lat-long form        |    1 |     0 |    0 |
+
+The minutes offset field represents the number of minutes offset from UTC, encoded as a 12-bit signed two's complement integer.
+
+
+### UTC
+
+UTC timezone is specified by setting the [`time zone present` bit](#compact-time) to 0 in the main time structure and omitting any time zone structure.
 
 
 ### Comparison of Forms
@@ -329,25 +358,39 @@ Latitude-Longitude:
   - Smaller size.
   - Impervious to the effects of changing names or boundaries over time.
 
+UTC Offset:
+
+  - Used in some legacy systems.
+  - Lacks important information.
+
+UTC:
+
+  - Smallest form.
+  - Only useful in certain circumstances.
+
+
+
+Reserved Fields
+---------------
+
+RESERVED fields **MUST** contain all one bits. If a RESERVED field contains any `0` bits, the time/date/timestamp is invalid.
 
 
 Invalid Encoding
 ----------------
 
-If any field contains values outside of its allowed range, the entire time/date/timestamp is invalid.
-
-RESERVED fields must contain all one bits. If a RESERVED field contains any `0` bits, the time/date/timestamp is invalid.
+If any field in a time value contains values outside of its allowed range, the entire time/date/timestamp is invalid.
 
 
 ### Zero Values
 
-Values made of all zero bits are guaranteed to be invalid:
+Time values made of all zero bits are guaranteed to be invalid:
 
 * Date value [`00 00 00`] has 0 for month and day, which is invalid.
 * Time value [`00 00 00`] has 0 bits in the 4-bit reserved section, which is invalid.
 * Timestamp value [`00 00 00 00 00`] has 0 for month and day, which is invalid.
 
-These invalid encodings can be useful as a marker to represent unset or missing time values.
+These otherwise invalid encodings may be used as markers to represent unset time values.
 
 
 
