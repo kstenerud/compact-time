@@ -43,7 +43,7 @@ Contents
   - [Comparison of Forms](#comparison-of-forms)
 * [Reserved Fields](#reserved-fields)
 * [Invalid Encoding](#invalid-encoding)
-  - [Zero Value](#zero-value)
+  - [Zero Values](#zero-values)
 * [Examples](#examples)
 * [How to Keep Time](#how-to-keep-time)
 * [License](#license)
