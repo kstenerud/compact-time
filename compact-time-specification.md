@@ -1,9 +1,9 @@
 Compact Time Format
 ===================
 
-The compact time formats are encoding schemes to store a complete time, date, or timestamp in as few bytes as possible for data transmission.
+The compact time formats are encoding schemes to store a complete time, date, or timestamp in a compact manner for data transmission.
 
-Any Gregorian or proleptic Gregorian date, time, or timestamp can be recorded down to the nanosecond using this encoding.
+Any Gregorian or proleptic Gregorian date, time, or timestamp can be recorded to the nanosecond using this encoding.
 
 
 
@@ -25,35 +25,42 @@ Features
 Contents
 --------
 
-* [General Structure](#general-structure)
-* [Compact Date](#compact-date)
-* [Compact Time](#compact-time)
-* [Compact Timestamp](#compact-timestamp)
-* [Sub-second Magnitude](#sub-second-magnitude)
-* [Year Encoding](#year-encoding)
-  - [Zigzag Integer](#zigzag-integer)
-* [Proleptic Gregorian Calendar](#proleptic-gregorian-calendar)
-* [Time Zone](#time-zone)
-  - [Area-Location](#area-location)
-    - [Abbreviated Areas](#abbreviated-areas)
-    - [Special Areas](#special-areas)
-  - [Latitude-longitude](#latitude-longitude)
-  - [UTC Offset](#utc-offset)
-  - [UTC](#utc)
-  - [Comparison of Forms](#comparison-of-forms)
-* [Reserved Fields](#reserved-fields)
-* [Invalid Encoding](#invalid-encoding)
-  - [Zero Values](#zero-values)
-* [Examples](#examples)
-* [How to Keep Time](#how-to-keep-time)
-* [License](#license)
+- [Compact Time Format](#compact-time-format)
+  - [Features](#features)
+  - [Contents](#contents)
+  - [General Structure](#general-structure)
+  - [Compact Date](#compact-date)
+  - [Compact Time](#compact-time)
+  - [Compact Timestamp](#compact-timestamp)
+  - [Sub-second Magnitude](#sub-second-magnitude)
+  - [Year Encoding](#year-encoding)
+    - [Zigzag Integer](#zigzag-integer)
+  - [Proleptic Gregorian Calendar](#proleptic-gregorian-calendar)
+  - [Time Zone](#time-zone)
+    - [Area-Location](#area-location)
+      - [Abbreviated Areas](#abbreviated-areas)
+      - [Special Areas](#special-areas)
+    - [Latitude-Longitude](#latitude-longitude)
+    - [UTC Offset](#utc-offset)
+    - [UTC](#utc)
+    - [Comparison of Forms](#comparison-of-forms)
+  - [Reserved Fields](#reserved-fields)
+  - [Invalid Encoding](#invalid-encoding)
+    - [Zero Values](#zero-values)
+  - [More Examples](#more-examples)
+  - [How to Keep Time](#how-to-keep-time)
+    - [Absolute Time](#absolute-time)
+    - [Fixed Time](#fixed-time)
+    - [Floating Time](#floating-time)
+    - [When to Use Each Kind](#when-to-use-each-kind)
+  - [License](#license)
 
 
 
 General Structure
 -----------------
 
-All structures are composed of bitfields, which are either encoded as fixed width data, or a combined fixed width and variable width portion.
+All structures are composed of bitfields, which are either encoded as fixed width data, or as a combined fixed width and variable width portion (where the variable width portion extends the fixed width portion).
 
  * Fixed width data is encoded as an unsigned integer, stored in little endian byte order.
  * Variable width data is encoded as an [unsigned LEB128](https://en.wikipedia.org/wiki/LEB128).
@@ -81,7 +88,7 @@ A compact date's fields are laid out as follows:
 The fixed portion is 16 bits wide, and the variable portion uses a minimum of 1 octet.
 
 
-#### Example: Dec 31, 3000
+**Example**: Dec 31, 3000
 
 | Field | Width | Value | Encoded          | Notes                                                      |
 | ----- | ----- | ----- | ---------------- | ---------------------------------------------------------- |
@@ -122,12 +129,12 @@ The structure will be anywhere from 24 to 56 bits wide (determined by the [`sub-
 |     2     |      40     |        20        |           0          |
 |     3     |      56     |        30        |           6          |
 
-If the `Time Zone Present` flag is 1, the time structure is followed by a [time zone structure](#time-zone). If the flag is 0, the time zone is UTC.
+If the `Time Zone Present` flag is 1, the time structure is followed by a [time zone structure](#time-zone). If it's 0, the time zone is UTC.
 
 The RESERVED field **MUST** always be set to all 1 bits.
 
 
-#### Example: 23:59:59 UTC
+**Example**: 23:59:59 UTC
 
 | Field                | Width | Value | Encoded  |
 | -------------------- | ----- | ----- | -------- |
@@ -138,6 +145,8 @@ The RESERVED field **MUST** always be set to all 1 bits.
 | Sub-seconds          |     0 |     0 |          |
 | Sub-second Magnitude |     2 |     0 | `    00` |
 | Time Zone Present    |     1 |     0 | `     0` |
+
+With a sub-second magnitude of 0, there are 4 RESERVED bits.
 
 Layout:
 
@@ -174,10 +183,10 @@ The fixed portion will be anywhere from 32 to 64 bits wide (determined by the [`
 |     2     |      56     |        20        |       14       |
 |     3     |      64     |        30        |       12       |
 
-If the `Time Zone Present` flag is 1, the time structure is followed by a [time zone structure](#time-zone). If the flag is 0, the time zone is UTC.
+If the `Time Zone Present` flag is 1, the time structure is followed by a [time zone structure](#time-zone). If it's 0, the time zone is UTC.
 
 
-#### Example: Dec 31, 2000, 23:59:59
+**Example**: Dec 31, 2000, 23:59:59
 
 | Field                | Width | Value | Encoded      | Notes                                                |
 | -------------------- | ----- | ----- | ------------ | ---------------------------------------------------- |
@@ -249,7 +258,7 @@ Where `<<` and `>>` are arithmetic bit shifts, and `^` is the logical XOR operat
 Proleptic Gregorian Calendar
 -----------------------------
 
-Dates prior to the introduction of the Gregorian Calendar in 1582 **MUST** be stored according to the proleptic Gregorian calender.
+Dates prior to the introduction of the [Gregorian Calendar](https://en.wikipedia.org/wiki/Gregorian_calendar) (15 October 1582) **MUST** be stored according to the [proleptic Gregorian calender](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar).
 
 
 
@@ -394,10 +403,10 @@ These otherwise invalid encodings may be used as markers to represent unset time
 
 
 
-Examples
---------
+More Examples
+-------------
 
-### Example: June 24, 2019, 17:53:04.180 UTC
+**Example**: June 24, 2019, 17:53:04.180 UTC
 
 Year is calculated as `2000` + `19 (0x13)`, encoded as zigzag: `0x26` (`100110`).
 
@@ -421,7 +430,7 @@ Year is calculated as `2000` + `19 (0x13)`, encoded as zigzag: `0x26` (`100110`)
     Encoded: [a2 85 a8 23 36 13]
 
 
-### Example: January 7, 40000
+**Example**: January 7, 40000
 
 Year is calculated as `2000` + `38000` (`0x9470`), encoded as zigzag: `0x128e0` (`10010100011100000`).
 
@@ -442,11 +451,11 @@ Year is calculated as `2000` + `38000` (`0x9470`), encoded as zigzag: `0x128e0` 
     Encoded: [27 c0 d1 04]
 
 
-### Example: 00:54:47.394129115, Europe/Paris
+**Example**: 00:54:47.394129115, Europe/Paris
 
 The sub-second portion goes to the nanosecond, which requires a magnitude field of 3.
 
-#### Time:
+Time:
 
 | Field                | Width | Value     | Encoded                          |
 | -------------------- | ----- | --------- | -------------------------------- |
@@ -463,9 +472,7 @@ The sub-second portion goes to the nanosecond, which requires a magnitude field 
 
     Encoded: [df 76 ef bb 5e 1b fc]
 
-#### Time Zone (if using area/location):
-
-Time Zone:
+Time Zone (if using area/location):
 
 | Field           | Width | Value     | Encoded                  |
 | --------------- | ----- | --------- | ------------------------ |
@@ -476,7 +483,7 @@ Followed by string contents "E/Paris"
 
     Encoded: [0e 45 2f 50 61 72 69 73]
 
-#### Time Zone (if using latitude/longitude):
+Time Zone (if using latitude/longitude):
 
 | Field         | Width | Value | Encoded            |
 | ------------- | ----- | ----- | ------------------ |
@@ -498,15 +505,15 @@ Time is one of the most difficult data types to get right. Aside from issues of 
 
 There are three main kinds of time:
 
-#### Absolute Time
+### Absolute Time
 
 Absolute time is a time that is fixed relative to UTC (or relative to an offset from UTC). It is not affected by daylight savings time, nor will it ever change if an area's time zone changes for political reasons. Absolute time is best recorded in the UTC time zone, and is mostly useful for events in the past (because the time zone is now fixed at the time of the event, so it probably no longer matters what specific time zone was in effect).
 
-#### Fixed Time
+### Fixed Time
 
 Fixed time is a time that is fixed to a particular place, and that place has a time zone associated with it (but the time zone might change for political reasons in the future,for example with daylight savings). If the venue changes, only the time zone data needs to be updated. An example would be an appointment in London this coming October 12th at 10:30.
 
-#### Floating Time
+### Floating Time
 
 Floating (or local) time is always relative to the time zone of the observer. If you travel and change time zones, floating time changes zones with you. If you and another observer are in different time zones and observe the same floating time value, the absolute times you calculate will be different. An example would be your 8:00 morning workout.
 
@@ -530,4 +537,4 @@ License
 
 Copyright 2019 Karl Stenerud
 
-Specification released under Creative Commons Attribution 4.0 International Public License https://creativecommons.org/licenses/by/4.0/
+Distributed under the [Creative Commons Attribution License](https://creativecommons.org/licenses/by/4.0/legalcode) ([license deed](https://creativecommons.org/licenses/by/4.0).
